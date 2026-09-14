@@ -154,5 +154,12 @@ dependencies {
     // WindowInsetsCompat (InsetUtil.java) -- pulled in transitively by
     // Material already, but declared directly since we call its APIs.
     implementation 'androidx.core:core:1.13.1'
+
+    // GeneralsX @feature Android port mod-launcher 14/09/2026 Pure-Java RAR4
+    // extraction for the mod manager (ModInstaller.extractRar) -- a large
+    // share of ModDB releases ship as .rar, which the JDK has no support for.
+    // Apache-2.0, no transitive dependencies. RAR5 archives are rejected with
+    // a clear message rather than half-extracted.
+    implementation 'com.github.junrar:junrar:7.5.5'
 }
 

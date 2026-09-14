@@ -132,6 +132,15 @@
             android:theme="@style/Theme.GeneralsZHSettings"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- GeneralsX @feature Android port mod-launcher 14/09/2026 The mod
+             manager: browse/install ModDB mods, pick which one -mod launches
+             with, delete without touching game data. -->
+        <activity
+            android:name=".ModManagerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.GeneralsZHSettings"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <activity
             android:name=".LogViewerActivity"
             android:exported="false"

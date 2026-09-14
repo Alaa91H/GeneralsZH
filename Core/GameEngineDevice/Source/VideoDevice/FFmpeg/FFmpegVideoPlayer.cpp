@@ -238,7 +238,13 @@ VideoStreamInterface*	FFmpegVideoPlayer::open( AsciiString movieTitle )
 		if (TheGlobalData->m_modDir.isNotEmpty())
 		{
 			char filePath[ _MAX_PATH ];
-			snprintf( filePath, ARRAY_SIZE(filePath), "%s%s\\%s.%s", TheGlobalData->m_modDir.str(), VIDEO_PATH, pVideo->m_filename.str(), VIDEO_EXT );
+			// GeneralsX @bugfix Android port mod-launcher 14/09/2026 Was a hardcoded
+			// backslash between the mod dir and the video path. Mod dirs on Android
+			// are POSIX paths (<gameFolder>/Mods/<Name>/), so ".../Mods/X/\\Data" was
+			// a filename literally ending in a backslash and every mod-shipped video
+			// fell back to the retail one. Forward slash works on every platform this
+			// engine builds for, Windows included.
+			snprintf( filePath, ARRAY_SIZE(filePath), "%s%s/%s.%s", TheGlobalData->m_modDir.str(), VIDEO_PATH, pVideo->m_filename.str(), VIDEO_EXT );
 			File* file =  TheFileSystem->openFile(filePath);
 			DEBUG_ASSERTLOG(!file, ("opened bink file %s", filePath));
 			if (file)

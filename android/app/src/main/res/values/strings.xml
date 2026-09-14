@@ -220,4 +220,55 @@
     <string name="setup_render_backend_gles_short">GLES</string>
     <string name="setup_render_backend_gles_angle_short">ANGLE</string>
     <string name="setup_render_backend_vulkan_short">Vulkan</string>
+
+    <!-- GeneralsX @feature Android port mod-launcher 14/09/2026 The mod
+         manager (ModManagerActivity): browse/install ModDB mods, launch one
+         with -mod, delete it, all without touching the game folder. -->
+    <string name="setup_button_mods">Mods</string>
+    <string name="setup_status_mods_note">Browse ModDB, install mods, and pick which one to play — game files stay untouched</string>
+    <string name="mods_window_title">Mods</string>
+    <string name="mods_overline">Mod Manager</string>
+    <string name="mods_refresh">Refresh</string>
+    <string name="mods_tab_installed">Installed</string>
+    <string name="mods_tab_browse">Browse ModDB</string>
+    <string name="mods_no_game_folder">Pick a game folder in Setup first — mods install next to it, under a "Mods" folder.</string>
+    <string name="mods_card_launch">Launch</string>
+    <string name="mods_launch_active">Playing with mod: %1$s. Turn it off to play vanilla.</string>
+    <string name="mods_launch_vanilla">No mod selected — the game launches vanilla.</string>
+    <string name="mods_button_launch">Launch Game</string>
+    <string name="mods_button_clear_launch">Clear Selection (play vanilla)</string>
+    <string name="mods_card_installed">Installed mods (%1$d)</string>
+    <string name="mods_none_installed">No mods installed yet. Browse ModDB to grab one.</string>
+    <string name="mods_entry_size">%1$s on disk</string>
+    <string name="mods_installed_hint">Tap a mod to play or delete it. Each install is its own folder — nothing is merged into the game files.</string>
+    <string name="mods_action_play">Play with this mod</string>
+    <string name="mods_action_delete">Delete</string>
+    <string name="mods_delete_title">Delete %1$s?</string>
+    <string name="mods_delete_body">The mod folder "%1$s" and everything in it will be removed. Your game files, saves and maps are not touched.</string>
+    <string name="mods_delete_confirm">Delete</string>
+    <string name="mods_card_browse">Browse ModDB</string>
+    <string name="mods_browse_hint">Search or page through every C&amp;C: Generals Zero Hour mod on ModDB, straight from the app.</string>
+    <string name="mods_search_hint">Search mods…</string>
+    <string name="mods_search_button">Search</string>
+    <string name="mods_show_all">Show all mods</string>
+    <string name="mods_loading">Loading…</string>
+    <string name="mods_card_results">Mods (%1$d)</string>
+    <string name="mods_no_description">No description</string>
+    <string name="mods_no_results">No mods found. Try another search.</string>
+    <string name="mods_no_files">This mod has no downloadable files on ModDB.</string>
+    <string name="mods_files_hint">Pick a release to download and install. Only .big archives inside the download are used.</string>
+    <string name="mods_back_to_results">Back to results</string>
+    <string name="mods_download_title">Download %1$s?</string>
+    <string name="mods_download_body">Mod: %1$s\n\n%2$s</string>
+    <string name="mods_download_note">The archive is downloaded and its .big files installed as a separate mod folder. Large mods can take a while.</string>
+    <string name="mods_download_confirm">Download</string>
+    <string name="mods_installing">Installing %1$s…</string>
+    <string name="mods_installing_long">Installing %1$s — keep this screen open</string>
+    <string name="mods_phase_starting">Starting download…</string>
+    <string name="mods_phase_extracting">Extracting .big files…</string>
+    <string name="mods_install_done">Installed %1$s. Tap it under Installed to play.</string>
+    <string name="mods_err_title">Something went wrong</string>
+    <string name="mods_err_fetch">Could not reach ModDB: %1$s</string>
+    <string name="mods_err_install">Install failed: %1$s</string>
+    <string name="mods_err_write_cfg">Could not save the selection: %1$s</string>
 </resources>

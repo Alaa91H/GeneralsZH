@@ -1374,6 +1374,72 @@ int main(int argc, char* argv[])
 #endif
 		}
 
+#if defined(__ANDROID__)
+		// GeneralsX @feature Android port mod-launcher 14/09/2026 Inject a
+		// -mod <dir> argument when Setup's mod manager has one selected.
+		//
+		// The mod manager (ModManagerActivity.java) downloads mods into
+		// <gameFolder>/Mods/<Name>/ -- each leaf a folder of .big archives
+		// exactly as -mod expects them -- and records the one to play as a
+		// single line in <internal>/mod_launch.cfg (mirroring the
+		// gamedata_path.txt marker-file convention). This reads it and appends
+		// the argument to argv, so the stock engine path
+		// (CommandLine.cpp parseMod -> GlobalData::m_modDir ->
+		// ArchiveFileSystem::loadMods -> loadBigFilesFromDirectory(TRUE))
+		// mounts the mod's archives with overwrite semantics on top of the
+		// retail ones. The game folder itself is never touched: mods stay
+		// side-by-side with it, deleted with one button, and vanilla launches
+		// by simply clearing the file (or clearing the picker in Setup).
+		//
+		// Injection point deliberately matches the -xres/-yres block above:
+		// before GameMain(), after the working-directory chdir, and after
+		// parseCommandLineForEngineInit() will read __argv inside GameMain()
+		// -- CommandLine::parseCommandLineForEngineInit() runs inside
+		// GameEngine::init(), so "before GameMain()" is all that's needed.
+		// The parser validates the path itself (doesFileExist + stat), so a
+		// stale marker (user deleted the folder in a file manager) degrades
+		// to a plain vanilla launch, not a crash.
+		{
+			const char *internalPath = SDL_GetAndroidInternalStoragePath();
+			if (internalPath != nullptr) {
+				char modCfgPath[1024];
+				snprintf(modCfgPath, sizeof(modCfgPath), "%s/mod_launch.cfg", internalPath);
+				FILE *modCfg = fopen(modCfgPath, "r");
+				if (modCfg != nullptr) {
+					char modPath[900] = {0};
+					if (fgets(modPath, sizeof(modPath), modCfg) != nullptr) {
+						size_t len = strlen(modPath);
+						while (len > 0 && (modPath[len - 1] == '\n' || modPath[len - 1] == '\r')) {
+							modPath[--len] = '\0';
+						}
+						if (len > 0) {
+							// Trailing slash: parseMod appends one for directories
+							// (needed by Win32Mouse.cpp/FFmpegVideoPlayer.cpp, which
+							// build "<m_modDir>data\\cursors\\..."-style paths), and
+							// StatFile/writable-tree creation rely on it too.
+							char modDirArg[944];
+							snprintf(modDirArg, sizeof(modDirArg), "%s%s", modPath,
+							         (modPath[len - 1] == '/') ? "" : "/");
+							static char modFlag[] = "-mod";
+							static char *newArgv[8];
+							int n = 0;
+							for (int i = 0; i < __argc && n < 5; ++i) {
+								newArgv[n++] = __argv[i];
+							}
+							newArgv[n++] = modFlag;
+							newArgv[n++] = modDirArg;
+							newArgv[n] = nullptr;
+							__argv = newArgv;
+							__argc = n;
+							fprintf(stderr, "INFO: Mod launch enabled: -mod %s\n", modDirArg);
+						}
+					}
+					fclose(modCfg);
+				}
+			}
+		}
+#endif // __ANDROID__
+
 		// Call cross-platform game entry point
 		exitcode = GameMain();
 

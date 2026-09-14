@@ -348,6 +348,10 @@ public class SetupActivity extends Activity {
                 buildUiScaleSection(page);
                 break;
             case TAB_TOOLS:
+                // GeneralsX @feature Android port mod-launcher 14/09/2026
+                // The mod manager: browse/install/launch ModDB mods without
+                // ever touching the game folder's own files.
+                buildModsSection(page);
                 buildLogsSection(page);
                 buildDiagnosticsSection(page);
                 break;
@@ -439,6 +443,23 @@ public class SetupActivity extends Activity {
     }
 
     // ------------------------------------------------------------ Logs entry
+
+    // GeneralsX @feature Android port mod-launcher 14/09/2026 Entry point to
+    // ModManagerActivity. A separate activity (not a Setup page) because the
+    // mod flow has its own two-level navigation (installed/browse -> mod's
+    // files) and its own back-stack; burying that inside Setup's tab swap
+    // would make Back do the wrong thing.
+    private void buildModsSection(LinearLayout page) {
+        LinearLayout card = UiKit.card(page);
+        UiKit.listRow(card, R.drawable.ic_gzh_chip,
+            getString(R.string.setup_button_mods),
+            getString(R.string.setup_status_mods_note),
+            this::onOpenMods);
+    }
+
+    private void onOpenMods() {
+        startActivity(new Intent(this, ModManagerActivity.class));
+    }
 
     private void buildLogsSection(LinearLayout page) {
         LinearLayout card = UiKit.card(page);
