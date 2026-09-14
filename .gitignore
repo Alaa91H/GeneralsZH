@@ -108,3 +108,8 @@ android-staging/
 # is disabled on this fork, so a ~40MB binary can't go into version control
 # at all even if it were source), not something to commit.
 /GeneralsXZH-android-local.apk
+
+# GeneralsX @build mod-launcher 14/09/2026 Binary build outputs kept
+# out of the clean source history: CI builds all of these from source.
+apk/
+GeneralsOnlineRelease/
