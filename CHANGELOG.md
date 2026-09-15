@@ -7,6 +7,38 @@ and the project versions per [Semantic Versioning](https://semver.org/):
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-16
+
+GenLauncher-parity pass for the mod manager: the Mods screen becomes a
+first-class bottom-navigation page in Setup (the standalone entry
+remains), installed mods are grouped per ModDB profile with per-version
+control, and updates are detected automatically.
+
+### Added
+
+- **Mods as a bottom-nav page** — a new "Mods" tab in Setup hosts the
+  full mod manager inline (browse, install, update, launch); the
+  standalone Mods screen is unchanged and both share one implementation.
+- **Version groups, GenLauncher-style** — every downloaded release of a
+  mod is its own version leaf under `Mods/<Mod>/<Version>/`, listed
+  grouped by mod with each version separately playable and deletable.
+  Switching versions never destroys another; pre-1.4 single-folder
+  installs still appear and launch unchanged.
+- **Automatic update detection** — installs record their ModDB origin
+  in a per-version sidecar; the Mods page checks current releases on
+  open (one paced request per mod) and badges mods whose installed
+  release is no longer current, with a manual "Check for mod updates"
+  action and a summary toast.
+- **Detail page media** — mod profile pages now show a screenshots
+  strip (horizontally scrolling gallery) plus rating and download-count
+  chips alongside the hero image and description.
+
+### Changed
+
+- Entering a mod's release list from an update badge goes straight to
+  the file list; Back from a browse results list returns to the
+  Installed tab as the home root.
+
 ## [1.3.0] - 2026-09-15
 
 The mod launcher professional pass: reliability for large downloads, a

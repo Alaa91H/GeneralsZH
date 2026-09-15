@@ -270,6 +270,16 @@
     <string name="mods_storage_note">متاح %1$s على هذا القرص</string>
     <string name="mods_storage_freed">تم تنظيف %1$s من الملفات المؤقتة</string>
     <string name="mods_err_low_storage">لا توجد مساحة كافية لبدء هذا التنزيل (متاح %1$s). حرّر بعض المساحة وحاول مجدداً.</string>
+
+    <!-- GeneralsX @feature Android port mod-launcher 16/09/2026 -->
+    <string name="nav_tab_mods">المودات</string>
+    <string name="mods_group_versions">‏%1$d إصدارات</string>
+    <string name="mods_check_updates">التحقق من تحديثات المودات</string>
+    <string name="mods_checking_updates">جارٍ التحقق من التحديثات…</string>
+    <string name="mods_updates_summary">انتهى التحقق — %1$d مود لديه إصدار أحدث</string>
+    <string name="mods_update_badge">يوجد تحديث</string>
+    <string name="mods_screenshots">الصور</string>
+    <string name="mods_screenshot_desc">صورة من المود</string>
     <string name="mods_phase_resuming">استئناف التنزيل…</string>
     <string name="mods_sort_label">الترتيب</string>
     <string name="mods_sort_popular">الشعبية</string>

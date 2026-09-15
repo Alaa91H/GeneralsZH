@@ -281,6 +281,18 @@
     <string name="mods_storage_note">%1$s free on this drive</string>
     <string name="mods_storage_freed">%1$s of temp files cleaned</string>
     <string name="mods_err_low_storage">Not enough free space to start this download (%1$s free). Free up space and try again.</string>
+
+    <!-- GeneralsX @feature Android port mod-launcher 16/09/2026 GenLauncher-
+         parity pass: mods as a bottom-nav page, version groups, update
+         badges, screenshots strip. -->
+    <string name="nav_tab_mods">Mods</string>
+    <string name="mods_group_versions">%1$d versions</string>
+    <string name="mods_check_updates">Check for mod updates</string>
+    <string name="mods_checking_updates">Checking for updates…</string>
+    <string name="mods_updates_summary">Update check finished — %1$d mod(s) have a newer release</string>
+    <string name="mods_update_badge">Update available</string>
+    <string name="mods_screenshots">Screenshots</string>
+    <string name="mods_screenshot_desc">Mod screenshot</string>
     <string name="mods_phase_resuming">Resuming download…</string>
     <string name="mods_sort_label">Sort</string>
     <string name="mods_sort_popular">Popular</string>

@@ -76,7 +76,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.io.File;
 
-public class SetupActivity extends Activity {
+public class SetupActivity extends Activity implements ModsPanel.Host {
 
     static final String PREFS_NAME = "generalszh_setup";
     static final String PREF_GAME_PATH = "game_path";
@@ -226,10 +226,18 @@ public class SetupActivity extends Activity {
     private static final int TAB_INTERFACE = 3;
     private static final int TAB_TOOLS = 4;
     private static final int TAB_HELP = 5;
+    // GeneralsX @feature Android port mod-launcher 16/09/2026 The mod
+    // manager as a first-class bottom-nav destination, GenLauncher-style:
+    // browse/install/update/launch mods without leaving Setup. Hosted by
+    // ModsPanel; the standalone ModManagerActivity wraps the same panel.
+    private static final int TAB_MODS = 6;
 
     private int currentTab = TAB_HOME;
     private FrameLayout contentHost;
     private TextView appBarTitle;
+    // GeneralsX @feature Android port mod-launcher 16/09/2026 The embedded
+    // ModsPanel for TAB_MODS; page-scoped, cleared in clearPageReferences().
+    private ModsPanel modsPanel;
 
     private void buildUi() {
         clearPageReferences();
@@ -293,7 +301,8 @@ public class SetupActivity extends Activity {
         menu.add(Menu.NONE, TAB_GRAPHICS, 1, R.string.nav_tab_graphics).setIcon(R.drawable.ic_gzh_display);
         menu.add(Menu.NONE, TAB_INTERFACE, 2, R.string.nav_tab_interface).setIcon(R.drawable.ic_gzh_globe);
         menu.add(Menu.NONE, TAB_TOOLS, 3, R.string.nav_tab_tools).setIcon(R.drawable.ic_gzh_wrench);
-        menu.add(Menu.NONE, TAB_HELP, 4, R.string.nav_tab_help).setIcon(R.drawable.ic_gzh_info);
+        menu.add(Menu.NONE, TAB_MODS, 4, R.string.nav_tab_mods).setIcon(R.drawable.ic_gzh_chip);
+        menu.add(Menu.NONE, TAB_HELP, 5, R.string.nav_tab_help).setIcon(R.drawable.ic_gzh_info);
 
         nav.setOnItemSelectedListener(item -> {
             showTab(item.getItemId());
@@ -308,6 +317,7 @@ public class SetupActivity extends Activity {
             case TAB_GRAPHICS:  return R.string.nav_tab_graphics;
             case TAB_INTERFACE: return R.string.nav_tab_interface;
             case TAB_TOOLS:     return R.string.nav_tab_tools;
+            case TAB_MODS:      return R.string.nav_tab_mods;
             case TAB_HELP:      return R.string.nav_tab_help;
             default:            return R.string.nav_tab_home;
         }
@@ -353,12 +363,22 @@ public class SetupActivity extends Activity {
                 buildUiScaleSection(page);
                 break;
             case TAB_TOOLS:
-                // GeneralsX @feature Android port mod-launcher 14/09/2026
-                // The mod manager: browse/install/launch ModDB mods without
-                // ever touching the game folder's own files.
-                buildModsSection(page);
                 buildLogsSection(page);
                 buildDiagnosticsSection(page);
+                break;
+            case TAB_MODS:
+                // GeneralsX @feature Android port mod-launcher 16/09/2026
+                // The full mod manager inline. Hosted by ModsPanel (shared
+                // with the standalone ModManagerActivity); clearPageReferences
+                // nulls modsPanel first so a page swap never writes into the
+                // removed view.
+                modsPanel = new ModsPanel(this, this, false);
+                modsPanel.notifyGameFolderMaybeChanged();
+                // The panel bounds its own height in onMeasure (embedded
+                // mode); the height here only seeds the first layout pass.
+                page.addView(modsPanel, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.MATCH_PARENT));
                 break;
             case TAB_HELP:
                 buildHelpSection(page);
@@ -377,6 +397,7 @@ public class SetupActivity extends Activity {
 
     /** Forgets every page-scoped view so a stale one is never written to. */
     private void clearPageReferences() {
+        modsPanel = null;
         statusText = null;
         onlineStatusView = null;
         gameLanguageStatusView = null;
@@ -2763,9 +2784,47 @@ public class SetupActivity extends Activity {
         }
     }
 
+    // -------------------------------------------------- ModsPanel.Host impl
+
+    // GeneralsX @feature Android port mod-launcher 16/09/2026 The Setup
+    // activity hosts the embedded mod-manager panel (TAB_MODS): it supplies
+    // game launch, folder-picker hand-off and SAF forwarding, exactly like
+    // the standalone ModManagerActivity wrapper does.
+
+    @Override
+    public Activity activity() {
+        return this;
+    }
+
+    @Override
+    public void launchGame() {
+        onLaunchGame();
+    }
+
+    @Override
+    public void requestGameFolder() {
+        // Stay inside Setup: jump to the Home tab where the folder card is.
+        showTab(TAB_HOME);
+    }
+
+    @Override
+    public void onBackPressed() {
+        // The embedded panel consumes Back for its own stack first
+        // (files -> detail -> browse); otherwise default behavior.
+        if (currentTab == TAB_MODS && modsPanel != null && modsPanel.onBackPressed()) {
+            return;
+        }
+        super.onBackPressed();
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        // The embedded panel's storage-import picker comes back here.
+        if (requestCode == ModsPanel.REQ_PICK_ARCHIVE && modsPanel != null) {
+            modsPanel.handleActivityResult(requestCode, resultCode, data);
+            return;
+        }
         if (requestCode == 1001 && resultCode == Activity.RESULT_OK && data != null) {
             String path = data.getStringExtra(FolderPickerActivity.EXTRA_SELECTED_PATH);
             if (path != null) {

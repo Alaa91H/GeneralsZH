@@ -129,12 +129,26 @@ final class ModDbClient {
         final String name;
         final String description; // profile page's description section, decoded
         final String imageUrl;    // profile hero/imagehost URL, or null
+        // GeneralsX @feature 16/09/2026 GenLauncher-style detail page: the
+        // profile's screenshot strip. Empty when the page has none or the
+        // shape changed — the panel renders a plain detail view instead.
+        final List<String> screenshots;
+        final String rating;
+        final String downloads;
 
         ModDetails(String profilePath, String name, String description, String imageUrl) {
+            this(profilePath, name, description, imageUrl, null, null, null);
+        }
+
+        ModDetails(String profilePath, String name, String description, String imageUrl,
+                   List<String> screenshots, String rating, String downloads) {
             this.profilePath = profilePath;
             this.name = name;
             this.description = description;
             this.imageUrl = imageUrl;
+            this.screenshots = screenshots != null ? screenshots : new ArrayList<>();
+            this.rating = rating;
+            this.downloads = downloads;
         }
     }
 
@@ -316,8 +330,23 @@ final class ModDbClient {
         if (hero == null) {
             hero = firstMatch(html, PROFILE_HERO_META);
         }
+        // GeneralsX @feature 16/09/2026 Screenshot strip: ModDB profile
+        // pages link their media gallery via /games/<game>/images or the
+        // mod's own /images/<id>/<slug> anchors around imagehost thumbs;
+        // collect the mod-scoped image URLs, deduped, capped at 10.
+        List<String> shots = new ArrayList<>();
+        Matcher shot = PROFILE_SCREENSHOT.matcher(html);
+        while (shot.find() && shots.size() < 10) {
+            String url = decodeEntities(shot.group(1));
+            if (!shots.contains(url)) {
+                shots.add(url);
+            }
+        }
         return new ModDetails(summary.profilePath, summary.name, desc,
-                              hero != null ? hero : summary.imageUrl);
+                              hero != null ? hero : summary.imageUrl,
+                              shots,
+                              decodeEntities(firstMatch(html, ROW_RATING)),
+                              decodeEntities(firstMatch(html, ROW_DOWNLOADS)));
     }
 
     /** Truncates the markup after a list-row start marker into a parse block. */
@@ -475,6 +504,13 @@ final class ModDbClient {
         Pattern.compile("src=\"(https://[^\"]*(?:imagehost|moddb)\\.com/[^\"]*/images/mods/[^\"]+\\.(?:jpg|png|jpeg))\"");
     private static final Pattern PROFILE_HERO_META =
         Pattern.compile("property=\"og:image\"\\s+content=\"([^\"]+)\"");
+    // GeneralsX @feature 16/09/2026 Screenshot strip on the profile page:
+    // imagehost image URLs under the mod-scoped gallery (images/mods/<id>/
+    // or images/<id>/), which excludes site chrome and other games' media.
+    // Any raster extension matches; ThumbCache downsamples on decode, so
+    // thumbs and full shots both render acceptably in the strip.
+    private static final Pattern PROFILE_SCREENSHOT =
+        Pattern.compile("(https://[^\"]*(?:imagehost|moddb)\\.com/images/(?:mods/)?\\d+/[^\"]*\\.(?:jpg|jpeg|png))");
     // Profile links (/mods/<name>) but not ones into a mod's downloads tree
     // (those belong to file rows, not the mod itself).
     private static final Pattern MOD_PROFILE_HREF =

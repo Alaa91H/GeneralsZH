@@ -68,9 +68,14 @@ import java.util.zip.ZipFile;
 
 final class ModInstaller {
 
-    /** A mod present on disk under <gameFolder>/Mods/. */
+    /**
+     * A single installed version leaf: <gameFolder>/Mods/<Mod>/<Version>/.
+     * GenLauncher's model — every downloaded release of a mod stays
+     * separately installed, selectable and deletable; switching versions
+     * never destroys another.
+     */
     static final class InstalledMod {
-        final String displayName; // folder name (shown verbatim in the UI)
+        final String displayName; // version folder name (shown verbatim in the UI)
         final String dirPath;     // absolute path handed to the engine via -mod
         final long bytesUsed;     // size of every file under dirPath
         final boolean selected;   // currently written to mod_launch.cfg
@@ -83,6 +88,33 @@ final class ModInstaller {
         }
     }
 
+    /**
+     * GeneralsX @feature 16/09/2026 A mod family: one ModDB profile's group
+     * of installed versions (a mod with one legacy folder still groups as a
+     * single-version family). Groups keep the Mods page GenLauncher-shaped:
+     * the mod is the row, versions expand beneath it, and the update badge
+     * lives on the group.
+     */
+    static final class ModGroup {
+        final String modName;              // family name = top-level folder under Mods/
+        final List<InstalledMod> versions; // sorted: selected first, then name
+        final long bytesUsed;              // whole family
+        final boolean anySelected;
+
+        ModGroup(String modName, List<InstalledMod> versions) {
+            this.modName = modName;
+            this.versions = versions;
+            long total = 0;
+            boolean selected = false;
+            for (InstalledMod v : versions) {
+                total += v.bytesUsed;
+                selected |= v.selected;
+            }
+            this.bytesUsed = total;
+            this.anySelected = selected;
+        }
+    }
+
     /** Progress for the download+extract pipeline; delivered via runOnUiThread. */
     interface Listener {
         void onPhase(String text);
@@ -90,6 +122,8 @@ final class ModInstaller {
     }
 
     private static final String MODS_DIR_NAME = "Mods";
+    /** Sidecar holding the ModDB file page path for update checks. */
+    static final String META_SUFFIX = ".moddb_meta";
     /** Big archive format magic: every .big starts with these four bytes. */
     private static final long BIGF_MAGIC = 0x42494746L; // "BIGF"
 
@@ -97,6 +131,38 @@ final class ModInstaller {
 
     static File modsRoot(String gameFolder) {
         return new File(gameFolder, MODS_DIR_NAME);
+    }
+
+    /**
+     * GeneralsX @feature 16/09/2026 Writes the metadata sidecar alongside an
+     * installed leaf so its origin (ModDB file page) survives across
+     * sessions — the input to update checks, and the distinguishing mark
+     * between a ModDB-installed version and a storage import.
+     */
+    static void writeMeta(File fileDir, String filePagePath) {
+        if (filePagePath == null || filePagePath.isEmpty()) {
+            return; // local import: no origin, no update path
+        }
+        try (java.io.FileWriter w = new java.io.FileWriter(
+                 new File(fileDir.getParentFile(),
+                          fileDir.getName() + META_SUFFIX), false)) {
+            w.write(filePagePath);
+            w.write("\n");
+        } catch (IOException e) {
+            // Sidecar is an optimization, not a correctness requirement:
+            // without it the version just never shows an update badge.
+        }
+    }
+
+    /** Reads the sidecar from a version folder; null when absent/empty. */
+    static String readMeta(File versionDir, String leafName) {
+        File meta = new File(versionDir, leafName + META_SUFFIX);
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(meta))) {
+            String line = r.readLine();
+            return (line != null && !line.trim().isEmpty()) ? line.trim() : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** Free bytes on the volume holding the game folder (0 when unknown). */
@@ -153,25 +219,52 @@ final class ModInstaller {
         }
     }
 
-    /** Lists installed mods; the selected one (if any) sorts to the top. */
-    static List<InstalledMod> listInstalled(String gameFolder, String launchPath) {
-        List<InstalledMod> out = new ArrayList<>();
+    /**
+     * Lists installed mods grouped per ModDB profile. Legacy single-leaf
+     * layout (pre-1.4 folders directly under Mods/) is read as a
+     * single-version family, so nothing installed before this change
+     * disappears from the UI or stops launching.
+     */
+    static List<ModGroup> listGroups(String gameFolder, String launchPath) {
+        List<ModGroup> out = new ArrayList<>();
         File root = modsRoot(gameFolder);
         File[] entries = root.listFiles();
         if (entries != null) {
             for (File e : entries) {
-                if (!e.isDirectory() || !hasBigFile(e)) {
-                    continue; // empty/broken folders are invisible, not launchable
+                if (!e.isDirectory()) {
+                    continue;
                 }
-                out.add(new InstalledMod(e.getName(), e.getAbsolutePath(),
-                                         dirSize(e), e.getAbsolutePath().equals(launchPath)));
+                List<InstalledMod> versions = new ArrayList<>();
+                File[] children = e.listFiles();
+                if (children != null) {
+                    for (File c : children) {
+                        if (c.isDirectory() && hasBigFile(c)) {
+                            versions.add(new InstalledMod(c.getName(), c.getAbsolutePath(),
+                                dirSize(c), c.getAbsolutePath().equals(launchPath)));
+                        }
+                    }
+                }
+                // Legacy layout: .big files sit directly in the mod folder.
+                if (versions.isEmpty() && hasBigFile(e)) {
+                    versions.add(new InstalledMod(e.getName(), e.getAbsolutePath(),
+                        dirSize(e), e.getAbsolutePath().equals(launchPath)));
+                }
+                if (!versions.isEmpty()) {
+                    versions.sort((a, b) -> {
+                        if (a.selected != b.selected) {
+                            return a.selected ? -1 : 1;
+                        }
+                        return a.displayName.compareToIgnoreCase(b.displayName);
+                    });
+                    out.add(new ModGroup(e.getName(), versions));
+                }
             }
         }
         out.sort((a, b) -> {
-            if (a.selected != b.selected) {
-                return a.selected ? -1 : 1;
+            if (a.anySelected != b.anySelected) {
+                return a.anySelected ? -1 : 1;
             }
-            return a.displayName.compareToIgnoreCase(b.displayName);
+            return a.modName.compareToIgnoreCase(b.modName);
         });
         return out;
     }
@@ -217,6 +310,16 @@ final class ModInstaller {
      */
     static File downloadAndInstall(String url, String gameFolder, String modName,
                                    String fileBaseName, Listener listener) throws Exception {
+        return downloadAndInstall(url, gameFolder, modName, fileBaseName, null, listener);
+    }
+
+    /**
+     * Same, and records the ModDB file page in the version sidecar so the
+     * panel can offer "update available" later.
+     */
+    static File downloadAndInstall(String url, String gameFolder, String modName,
+                                   String fileBaseName, String filePagePath,
+                                   Listener listener) throws Exception {
         File fileDir = prepareFileDir(gameFolder, modName, fileBaseName);
         File tmp = new File(fileDir.getParentFile(), fileBaseName + ".part");
         try {
@@ -228,6 +331,7 @@ final class ModInstaller {
             if (count == 0) {
                 throw new IOException("no .big archives found in this download");
             }
+            writeMeta(fileDir, filePagePath);
             return fileDir;
         } finally {
             tmp.delete();
@@ -256,6 +360,8 @@ final class ModInstaller {
         if (count == 0) {
             throw new IOException("no .big archives found in this file");
         }
+        // Local imports carry no ModDB origin — no sidecar, no update badge.
+        writeMeta(fileDir, null);
         return fileDir;
     }
 
