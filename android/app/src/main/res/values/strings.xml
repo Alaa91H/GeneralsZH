@@ -15,6 +15,7 @@
     <string name="setup_button_launch_game">Launch Game</string>
     <string name="setup_button_view_logs">View Logs</string>
     <string name="setup_button_clear_game_folder">Clear Game Folder Setting</string>
+    <string name="setup_button_save">Save</string>
 
     <!-- SetupActivity: status text -->
     <string name="setup_status_folder_not_set">Game folder: not set.\n</string>
@@ -271,4 +272,48 @@
     <string name="mods_err_fetch">Could not reach ModDB: %1$s</string>
     <string name="mods_err_install">Install failed: %1$s</string>
     <string name="mods_err_write_cfg">Could not save the selection: %1$s</string>
+
+    <!-- GeneralsX @feature Android port mod-launcher-2 15/09/2026 The
+         professional-pass additions: install from device storage, storage
+         hygiene, resumable downloads, richer browse cards, mod detail
+         screen, launch validation, and Setup's launch options. -->
+    <string name="mods_install_from_files">Add mod from storage</string>
+    <string name="mods_storage_note">%1$s free on this drive</string>
+    <string name="mods_storage_freed">%1$s of temp files cleaned</string>
+    <string name="mods_err_low_storage">Not enough free space to start this download (%1$s free). Free up space and try again.</string>
+    <string name="mods_phase_resuming">Resuming download…</string>
+    <string name="mods_sort_label">Sort</string>
+    <string name="mods_sort_popular">Popular</string>
+    <string name="mods_sort_rating">Rating</string>
+    <string name="mods_sort_recent">Recent</string>
+    <string name="mods_sort_name">Name</string>
+    <string name="mods_open_details">Details</string>
+    <string name="mods_back_to_browse">Back to mods</string>
+    <string name="mods_files_count">%1$d releases</string>
+    <string name="mods_retry">Retry</string>
+    <string name="mods_launch_warning_title">Mod may be broken</string>
+    <string name="mods_launch_warning_body">This mod failed the integrity check:\n\n%1$s\n\nThe game may crash with it loaded. Launch anyway?</string>
+    <string name="mods_launch_anyway">Launch anyway</string>
+    <string name="mods_page_next">Load more</string>
+    <string name="mods_thumb_desc">Mod thumbnail</string>
+    <string name="mods_installed_active_badge">Selected</string>
+    <string name="setup_launch_args_title">Launch arguments (advanced)</string>
+    <string name="setup_launch_args_hint">One argument per line, e.g. -win</string>
+    <string name="setup_launch_args_saved">Launch arguments saved — they apply on the next game launch</string>
+    <string name="setup_launch_args_note">Added to the game\'s command line at launch. Invalid values can prevent the game from starting — clear the box to reset.</string>
+    <string name="setup_fixed_resolution">Fixed resolution</string>
+    <string name="setup_fixed_resolution_off">Auto (screen)</string>
+    <string name="setup_fixed_resolution_note">Overrides the automatic screen-matched resolution. The engine requires a height of at least 600.</string>
+    <string name="update_check_label">App updates</string>
+    <string name="update_check_note">Checks the project\'s GitHub releases for a newer build of this launcher and downloads the APK for you to install.</string>
+    <string name="update_check_now">Check for updates</string>
+    <string name="update_check_failed">Update check failed: %1$s</string>
+    <string name="update_up_to_date">You\'re on the latest version (%1$s)</string>
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_body">Version %1$s is available (installed: %2$s).\n\n%3$s</string>
+    <string name="update_button_download">Download update</string>
+    <string name="update_button_later">Later</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_download_done">Downloaded. Open the notification or the APK to install it (allow installs from this app if asked).</string>
+    <string name="update_download_failed">Update download failed: %1$s</string>
 </resources>

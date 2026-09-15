@@ -264,4 +264,46 @@
     <string name="mods_err_fetch">تعذّر الوصول إلى ModDB: %1$s</string>
     <string name="mods_err_install">فشل التثبيت: %1$s</string>
     <string name="mods_err_write_cfg">تعذّر حفظ التحديد: %1$s</string>
+
+    <!-- GeneralsX @feature Android port mod-launcher-2 15/09/2026 -->
+    <string name="mods_install_from_files">إضافة مود من الذاكرة</string>
+    <string name="mods_storage_note">متاح %1$s على هذا القرص</string>
+    <string name="mods_storage_freed">تم تنظيف %1$s من الملفات المؤقتة</string>
+    <string name="mods_err_low_storage">لا توجد مساحة كافية لبدء هذا التنزيل (متاح %1$s). حرّر بعض المساحة وحاول مجدداً.</string>
+    <string name="mods_phase_resuming">استئناف التنزيل…</string>
+    <string name="mods_sort_label">الترتيب</string>
+    <string name="mods_sort_popular">الشعبية</string>
+    <string name="mods_sort_rating">التقييم</string>
+    <string name="mods_sort_recent">الأحدث</string>
+    <string name="mods_sort_name">الاسم</string>
+    <string name="mods_open_details">التفاصيل</string>
+    <string name="mods_back_to_browse">عودة إلى المودات</string>
+    <string name="mods_files_count">‏%1$d إصدارات</string>
+    <string name="mods_retry">إعادة المحاولة</string>
+    <string name="mods_launch_warning_title">قد يكون المود معطوباً</string>
+    <string name="mods_launch_warning_body">فشل فحص سلامة هذا المود:\n\n%1$s\n\nقد تنهار اللعبة مع تشغيله. تشغيل على أي حال؟</string>
+    <string name="mods_launch_anyway">تشغيل على أي حال</string>
+    <string name="mods_page_next">تحميل المزيد</string>
+    <string name="mods_thumb_desc">صورة المود المصغّرة</string>
+    <string name="mods_installed_active_badge">محدد</string>
+    <string name="setup_launch_args_title">معاملات التشغيل (متقدم)</string>
+    <string name="setup_launch_args_hint">معامل واحد في كل سطر، مثال: -win</string>
+    <string name="setup_launch_args_saved">تم حفظ معاملات التشغيل — تُطبّق عند إقلاع اللعبة القادم</string>
+    <string name="setup_launch_args_note">تُضاف إلى سطر أوامر اللعبة عند التشغيل. القيم الخاطئة قد تمنع اللعبة من الإقلاع — امسح الصندوق لإعادة الضبط.</string>
+    <string name="setup_button_save">حفظ</string>
+    <string name="setup_fixed_resolution">دقة ثابتة</string>
+    <string name="setup_fixed_resolution_off">تلقائي (حسب الشاشة)</string>
+    <string name="setup_fixed_resolution_note">تلغي الدقة التلقائية المطابقة للشاشة. يتطلب المحرك ارتفاعاً لا يقل عن 600.</string>
+    <string name="update_check_label">تحديثات التطبيق</string>
+    <string name="update_check_note">يتحقق من إصدارات GitHub الخاصة بالمشروع بحثاً عن إصدار أحدث من هذا التطبيق وينزّل ملف APK لتثبيته.</string>
+    <string name="update_check_now">التحقق من وجود تحديث</string>
+    <string name="update_check_failed">فشل التحقق من التحديث: %1$s</string>
+    <string name="update_up_to_date">أنت على أحدث إصدار (%1$s)</string>
+    <string name="update_available_title">يوجد تحديث</string>
+    <string name="update_available_body">الإصدار %1$s متاح (المثبت: %2$s).\n\n%3$s</string>
+    <string name="update_button_download">تنزيل التحديث</string>
+    <string name="update_button_later">لاحقاً</string>
+    <string name="update_downloading">جارٍ تنزيل التحديث…</string>
+    <string name="update_download_done">تم التنزيل. افتح الإشعار أو ملف APK للتثبيت (اسمح بالتثبيت من هذا التطبيق إذا طُلب منك).</string>
+    <string name="update_download_failed">فشل تنزيل التحديث: %1$s</string>
 </resources>
