@@ -114,7 +114,11 @@ jobs:
           echo "DXVK_REF=$(git rev-parse HEAD:references/fbraz3-dxvk)" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        # GeneralsX @build Android CI 15/09/2026 v4 -> v6: v4 targets Node 20,
+        # which GitHub forces onto Node 24 with a deprecation warning on
+        # every run (annotation spam on every release build); v6 targets
+        # Node 24 natively. Inputs unchanged for this temurin/17 usage.
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -167,7 +171,10 @@ jobs:
       # requested distribution and puts a `gradle` command on PATH — exactly
       # what scripts/build/android/package-android-zh.sh looks for.
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        # GeneralsX @build Android CI 15/09/2026 v4 -> v6: same Node 20
+        # deprecation as setup-java above. Inputs unchanged for this
+        # gradle-version usage.
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
@@ -535,7 +542,7 @@ jobs:
 
       - name: Publish GitHub Release
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_release }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ inputs.version_name }}
           name: v${{ inputs.version_name }}
