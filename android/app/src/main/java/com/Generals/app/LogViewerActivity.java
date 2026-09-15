@@ -41,7 +41,7 @@
 // time you get here) -- replaced with "Clear Logs" instead, which is what
 // people actually wanted a button for.
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -108,14 +108,14 @@ public class LogViewerActivity extends Activity {
         // the app having failed to draw anything.
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(UiKit.color(this, R.color.gzh_background));
+        root.setBackgroundColor(UiKit.color(this, R.color.gen_background));
 
         UiKit.appBar(root, getString(R.string.setup_window_title),
             getString(R.string.logviewer_title), 0, null, null);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.VERTICAL);
-        int gutter = UiKit.dim(this, R.dimen.gzh_gutter);
+        int gutter = UiKit.dim(this, R.dimen.gen_gutter);
         actions.setPadding(gutter, 0, gutter, 0);
         root.addView(actions, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -127,23 +127,23 @@ public class LogViewerActivity extends Activity {
         // Share is the reason this screen exists on a phone with no adb, so it
         // gets the full width; Copy and Clear split the row beneath it, which
         // also keeps three long translated labels off one 360dp line.
-        UiKit.button(actions, UiKit.BTN_PRIMARY, R.drawable.ic_gzh_share,
+        UiKit.button(actions, UiKit.BTN_PRIMARY, R.drawable.ic_gen_share,
             getString(R.string.logviewer_button_share), this::shareLogAsFile);
 
         LinearLayout buttonRow = UiKit.buttonRow(actions);
-        UiKit.share(UiKit.button(buttonRow, UiKit.BTN_TONAL, R.drawable.ic_gzh_copy,
+        UiKit.share(UiKit.button(buttonRow, UiKit.BTN_TONAL, R.drawable.ic_gen_copy,
             getString(R.string.logviewer_button_copy), () -> {
                 ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                 cm.setPrimaryClip(ClipData.newPlainText(getString(R.string.logviewer_share_subject), combinedLog));
                 Toast.makeText(this, R.string.logviewer_toast_copied, Toast.LENGTH_SHORT).show();
             }), true);
-        UiKit.share(UiKit.button(buttonRow, UiKit.BTN_DANGER, R.drawable.ic_gzh_trash,
+        UiKit.share(UiKit.button(buttonRow, UiKit.BTN_DANGER, R.drawable.ic_gen_trash,
             getString(R.string.logviewer_button_clear), this::confirmClearLogs), false);
 
         MaterialCardView logCard = new MaterialCardView(this);
-        logCard.setRadius(UiKit.dim(this, R.dimen.gzh_radius_card));
+        logCard.setRadius(UiKit.dim(this, R.dimen.gen_radius_card));
         logCard.setCardElevation(0f);
-        logCard.setCardBackgroundColor(UiKit.color(this, R.color.gzh_surface_container));
+        logCard.setCardBackgroundColor(UiKit.color(this, R.color.gen_surface_container));
         logCard.setStrokeWidth(0);
         logCard.setUseCompatPadding(false);
         logCard.setPreventCornerOverlap(false);
@@ -152,18 +152,18 @@ public class LogViewerActivity extends Activity {
         TextView logText = new TextView(this);
         logText.setId(android.R.id.text1);
         logText.setTextIsSelectable(true);
-        int pad = UiKit.dim(this, R.dimen.gzh_item_gap);
+        int pad = UiKit.dim(this, R.dimen.gen_item_gap);
         logText.setPadding(pad, pad, pad, pad);
         logText.setTypeface(android.graphics.Typeface.MONOSPACE);
         logText.setTextSize(11);
-        logText.setTextColor(UiKit.color(this, R.color.gzh_on_surface_variant));
+        logText.setTextColor(UiKit.color(this, R.color.gen_on_surface_variant));
         scroll.addView(logText);
         logCard.addView(scroll, new ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         FrameLayout logHost = new FrameLayout(this);
-        logHost.setPadding(gutter, UiKit.dim(this, R.dimen.gzh_card_gap), gutter,
-            UiKit.dim(this, R.dimen.gzh_card_gap));
+        logHost.setPadding(gutter, UiKit.dim(this, R.dimen.gen_card_gap), gutter,
+            UiKit.dim(this, R.dimen.gen_card_gap));
         logHost.addView(logCard, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         root.addView(logHost, new LinearLayout.LayoutParams(

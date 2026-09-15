@@ -82,7 +82,7 @@
         android:requestLegacyExternalStorage="false">
 
         <activity
-            android:name=".GeneralsZHActivity"
+            android:name=".GameActivity"
             android:exported="true"
             android:screenOrientation="landscape"
             android:launchMode="singleInstance"
@@ -100,7 +100,7 @@
              must never depend on the game itself having launched successfully.
 
              GeneralsX @bugfix Android port 31/07/2026 Was locked to
-             "landscape" (same as GeneralsZHActivity) to sidestep a real
+             "landscape" (same as GameActivity) to sidestep a real
              device bug: a portrait->landscape rotation triggered by
              Setup -> Launch Game could still be settling when the game's
              native window-size probe (WW3D::Init()) ran, and it read a
@@ -111,14 +111,14 @@
              this used to sidestep is now handled explicitly instead:
              SetupActivity.onLaunchGame() forces landscape and waits for
              onConfigurationChanged() to actually confirm the rotation
-             completed before starting GeneralsZHActivity, rather than
+             completed before starting GameActivity, rather than
              never rotating in the first place. -->
         <activity
             android:name=".SetupActivity"
             android:exported="true"
             android:label="@string/setup_window_title"
             android:icon="@mipmap/ic_launcher_setup"
-            android:theme="@style/Theme.GeneralsZHSettings"
+            android:theme="@style/Theme.Generals"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -129,7 +129,7 @@
         <activity
             android:name=".FolderPickerActivity"
             android:exported="false"
-            android:theme="@style/Theme.GeneralsZHSettings"
+            android:theme="@style/Theme.Generals"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- GeneralsX @feature Android port mod-launcher 14/09/2026 The mod
@@ -138,19 +138,19 @@
         <activity
             android:name=".ModManagerActivity"
             android:exported="false"
-            android:theme="@style/Theme.GeneralsZHSettings"
+            android:theme="@style/Theme.Generals"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <activity
             android:name=".LogViewerActivity"
             android:exported="false"
-            android:theme="@style/Theme.GeneralsZHSettings"
+            android:theme="@style/Theme.Generals"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <activity
             android:name=".GeneralsOnlineActivity"
             android:exported="false"
-            android:theme="@style/Theme.GeneralsZHSettings"
+            android:theme="@style/Theme.Generals"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- GeneralsX @bugfix Android port 11/07/2026 LogViewerActivity's

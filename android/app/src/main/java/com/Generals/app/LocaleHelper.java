@@ -34,7 +34,7 @@
 // values/ (English) when no values-<lang>/ matches -- both halves of "system
 // locale, or English if unsupported" are automatic, no override needed.
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -45,7 +45,7 @@ import java.util.Locale;
 
 final class LocaleHelper {
 
-    static final String PREFS_NAME = "generalszh_setup";
+    static final String PREFS_NAME = "generals_setup";
     static final String PREF_LANGUAGE_TAG = "language_tag";
 
     // GeneralsX @feature Android port 13/07/2026 Keep this in the same order

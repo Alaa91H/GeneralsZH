@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Generals Zero Hour</string>
+    <string name="app_name">Generals</string>
     <string name="common_cancel">إلغاء</string>
 
     <!-- SetupActivity: title / fallback -->
-    <string name="setup_window_title">إعدادات GeneralsZH</string>
+    <string name="setup_window_title">إعدادات Generals</string>
     <string name="setup_title">Command &amp; Conquer Generals: Zero Hour</string>
     <string name="setup_subtitle">إعدادات أندرويد</string>
     <string name="setup_fallback_warning">فشل تحميل واجهة الإعدادات العادية (%1$s). يتم عرض واجهة بديلة بسيطة حتى تتمكن من الوصول إلى السجلات/مجلد اللعبة.</string>
@@ -162,7 +162,7 @@
     <string name="logviewer_dialog_clear_confirm">مسح</string>
     <string name="logviewer_dialog_clear_cancel">إلغاء</string>
     <string name="logviewer_toast_cleared">تم مسح السجلات.</string>
-    <string name="logviewer_share_subject">سجل GeneralsZH Android</string>
+    <string name="logviewer_share_subject">سجل Generals Android</string>
     <string name="logviewer_share_chooser_title">مشاركة السجل</string>
     <string name="logviewer_toast_share_failed">تعذر تجهيز ملف السجل للمشاركة: %1$s</string>
     <string name="logviewer_read_failed">(تعذرت قراءة %1$s: %2$s)</string>
@@ -175,7 +175,7 @@
     <string name="online_signin_help">اضغط على "تسجيل الدخول". قد تطلب منك الضغطة الأولى استثناء هذا التطبيق من تحسين البطارية — اسمح بذلك، ثم عد واضغط على "تسجيل الدخول" مرة أخرى. سيفتح بعد ذلك متصفح على playgenerals.online يحمل بالفعل رمزًا لمرة واحدة لهذا الجهاز. اختر هناك Steam أو Discord أو GameReplays، ثم عد فقط إلى هذا التطبيق؛ ستنتهي العملية من تلقاء نفسها.</string>
     <string name="online_button_sign_in">تسجيل الدخول</string>
     <string name="online_status_signing_in">جارٍ تسجيل الدخول...</string>
-    <string name="online_status_battery_opt">اسمح لتطبيق GeneralsZH بالعمل في الخلفية في الشاشة التالية، ثم عد واضغط على "تسجيل الدخول" مرة أخرى — وإلا فقد يوقف أندرويد عملية التحقق من تسجيل الدخول أثناء وجودك في المتصفح.</string>
+    <string name="online_status_battery_opt">اسمح لتطبيق Generals بالعمل في الخلفية في الشاشة التالية، ثم عد واضغط على "تسجيل الدخول" مرة أخرى — وإلا فقد يوقف أندرويد عملية التحقق من تسجيل الدخول أثناء وجودك في المتصفح.</string>
     <string name="online_toast_no_browser">لا يوجد متصفح متاح: %1$s</string>
     <string name="online_status_continue_browser">تابع في متصفحك — عد إلى هنا بمجرد تسجيل الدخول.</string>
     <string name="online_status_network_error">خطأ في الشبكة — تحقق من اتصالك وحاول مرة أخرى.</string>

@@ -25,7 +25,7 @@
 // folder picker when no game folder is configured, and forward SAF results
 // from the storage-import file picker.
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -64,7 +64,7 @@ public class ModManagerActivity extends Activity implements ModsPanel.Host {
 
     @Override
     public void launchGame() {
-        startActivity(new Intent(this, GeneralsZHActivity.class));
+        startActivity(new Intent(this, GameActivity.class));
         finish();
     }
 

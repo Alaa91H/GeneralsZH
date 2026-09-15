@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Generals Zero Hour</string>
+    <string name="app_name">Generals</string>
     <string name="common_cancel">Anuluj</string>
 
     <!-- SetupActivity: title / fallback -->
-    <string name="setup_window_title">Ustawienia GeneralsZH</string>
+    <string name="setup_window_title">Ustawienia Generals</string>
     <string name="setup_title">Command &amp; Conquer Generals: Zero Hour</string>
     <string name="setup_subtitle">Ustawienia Android</string>
     <string name="setup_fallback_warning">Nie udało się załadować zwykłego interfejsu ustawień (%1$s). Wyświetlono prosty interfejs zastępczy, abyś nadal mógł dotrzeć do dzienników/folderu gry.</string>
@@ -162,7 +162,7 @@
     <string name="logviewer_dialog_clear_confirm">Wyczyść</string>
     <string name="logviewer_dialog_clear_cancel">Anuluj</string>
     <string name="logviewer_toast_cleared">Wyczyszczono dzienniki.</string>
-    <string name="logviewer_share_subject">Dziennik GeneralsZH Android</string>
+    <string name="logviewer_share_subject">Dziennik Generals Android</string>
     <string name="logviewer_share_chooser_title">Udostępnij dziennik</string>
     <string name="logviewer_toast_share_failed">Nie udało się przygotować pliku dziennika do udostępnienia: %1$s</string>
     <string name="logviewer_read_failed">(nie udało się odczytać %1$s: %2$s)</string>
@@ -175,7 +175,7 @@
     <string name="online_signin_help">Dotknij Zaloguj się. Za pierwszym razem może pojawić się prośba o wykluczenie tej aplikacji z optymalizacji baterii — zezwól na to, a następnie wróć i ponownie dotknij Zaloguj się. Otworzy się wtedy przeglądarka na playgenerals.online, już z jednorazowym kodem dla tego urządzenia. Wybierz tam Steam, Discord lub GameReplays, a następnie po prostu wróć do tej aplikacji — logowanie zakończy się samo.</string>
     <string name="online_button_sign_in">Zaloguj się</string>
     <string name="online_status_signing_in">Logowanie...</string>
-    <string name="online_status_battery_opt">Zezwól aplikacji GeneralsZH na działanie w tle na następnym ekranie, a następnie wróć i ponownie dotknij Zaloguj się — w przeciwnym razie Android może przerwać sprawdzanie logowania podczas przebywania w przeglądarce.</string>
+    <string name="online_status_battery_opt">Zezwól aplikacji Generals na działanie w tle na następnym ekranie, a następnie wróć i ponownie dotknij Zaloguj się — w przeciwnym razie Android może przerwać sprawdzanie logowania podczas przebywania w przeglądarce.</string>
     <string name="online_toast_no_browser">Brak dostępnej przeglądarki: %1$s</string>
     <string name="online_status_continue_browser">Kontynuuj w przeglądarce — wróć tutaj po zalogowaniu.</string>
     <string name="online_status_network_error">Błąd sieci — sprawdź połączenie i spróbuj ponownie.</string>

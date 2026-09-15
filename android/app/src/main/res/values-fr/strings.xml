@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Generals Zero Hour</string>
+    <string name="app_name">Generals</string>
     <string name="common_cancel">Annuler</string>
 
     <!-- SetupActivity: title / fallback -->
-    <string name="setup_window_title">Paramètres GeneralsZH</string>
+    <string name="setup_window_title">Paramètres Generals</string>
     <string name="setup_title">Command &amp; Conquer Generals: Zero Hour</string>
     <string name="setup_subtitle">Paramètres Android</string>
     <string name="setup_fallback_warning">L\'interface normale des paramètres n\'a pas pu se charger (%1$s). Une interface de secours simplifiée s\'affiche pour que vous puissiez quand même accéder aux journaux/au dossier du jeu.</string>
@@ -162,7 +162,7 @@
     <string name="logviewer_dialog_clear_confirm">Effacer</string>
     <string name="logviewer_dialog_clear_cancel">Annuler</string>
     <string name="logviewer_toast_cleared">Journaux effacés.</string>
-    <string name="logviewer_share_subject">Journal GeneralsZH Android</string>
+    <string name="logviewer_share_subject">Journal Generals Android</string>
     <string name="logviewer_share_chooser_title">Partager le journal</string>
     <string name="logviewer_toast_share_failed">Impossible de préparer le fichier journal pour le partage : %1$s</string>
     <string name="logviewer_read_failed">(impossible de lire %1$s : %2$s)</string>
@@ -175,7 +175,7 @@
     <string name="online_signin_help">Appuyez sur Se connecter. Le premier appui peut demander d\'exempter cette application de l\'optimisation de la batterie — autorisez-le, puis revenez et appuyez à nouveau sur Se connecter. Un navigateur s\'ouvre alors sur playgenerals.online, déjà avec un code à usage unique pour cet appareil. Choisissez Steam, Discord ou GameReplays, puis revenez simplement à cette application ; la connexion se termine d\'elle-même.</string>
     <string name="online_button_sign_in">Se connecter</string>
     <string name="online_status_signing_in">Connexion en cours...</string>
-    <string name="online_status_battery_opt">Autorisez GeneralsZH à s\'exécuter en arrière-plan sur l\'écran suivant, puis revenez et appuyez à nouveau sur Se connecter — sinon Android pourrait interrompre la vérification de connexion pendant que vous êtes dans le navigateur.</string>
+    <string name="online_status_battery_opt">Autorisez Generals à s\'exécuter en arrière-plan sur l\'écran suivant, puis revenez et appuyez à nouveau sur Se connecter — sinon Android pourrait interrompre la vérification de connexion pendant que vous êtes dans le navigateur.</string>
     <string name="online_toast_no_browser">Aucun navigateur disponible : %1$s</string>
     <string name="online_status_continue_browser">Continuez dans votre navigateur — revenez ici une fois connecté.</string>
     <string name="online_status_network_error">Erreur réseau — vérifiez votre connexion et réessayez.</string>

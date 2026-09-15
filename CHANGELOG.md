@@ -7,6 +7,53 @@ and the project versions per [Semantic Versioning](https://semver.org/):
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-16
+
+Full rebrand of the Android app: the launcher is now simply **Generals**
+(package `com.Generals.app`), every app-layer file, class, and resource
+bears a neutral name, and releases are cut by pushing a `vX.Y.Z` tag.
+
+### Changed
+
+- **App name** — the launcher icon and every user-visible title now read
+  "Generals" (previously "Generals Zero Hour" / "GeneralsZH Settings").
+- **Application id / package** — `com.generalsx.zerohour` →
+  `com.Generals.app`. Android treats this as a new app installing
+  alongside the old one; on first launch the new app migrates the game
+  folder path (and mod/mods-browse settings) from the legacy package's
+  prefs when that app is still installed, and the external
+  `.generalszh_gamepath.txt` marker keeps covering fresh installs.
+- **Neutral naming throughout the app layer** — Java package is now
+  `com.Generals.app`; `GeneralsZHActivity` → `GameActivity`,
+  `GeneralsOnlineActivity/Session` → `OnlineActivity/Session`; the
+  `gzh_` resource prefix (colors, icons, dialog background) → `gen_`;
+  `Theme.GeneralsZHSettings` → `Theme.Generals`; prefs file
+  `generalszh_setup` → `generals_setup`. No engine or gameplay file
+  was renamed — this is the launcher/app layer only.
+- **Native crash-log path** — `AndroidCrashHandler` no longer hardcodes
+  the package name; it derives the app's data directory from the
+  process uid (userId*100000 + appId), so it stays correct across any
+  future rebrand.
+- **CI artifact names** — APK artifacts are now
+  `Generals-android-run<N>.apk`.
+
+### Added
+
+- **Tag-driven versioning** — pushing a `vX.Y.Z` tag triggers the Build
+  Android workflow, which passes `-PversionTag` to Gradle; versionName
+  and versionCode (major*10000 + minor*100 + patch) are derived from
+  the tag and the GitHub Release is published from the same tag, so
+  the tag, the APK version, and the release can no longer drift apart.
+  A malformed tag fails the build instead of shipping a wrong version.
+
+### Notes
+
+- Existing users: install the new APK over (or beside) the old one;
+  the game-folder path and settings carry over automatically when the
+  legacy app is present, otherwise via the external marker file. The
+  old "Generals Zero Hour" icon can be uninstalled after the first
+  successful launch of the rebranded app.
+
 ## [1.4.0] - 2026-09-16
 
 GenLauncher-parity pass for the mod manager: the Mods screen becomes a

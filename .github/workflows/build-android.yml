@@ -65,6 +65,15 @@ on:
         type: string
         description: "Optional custom text for the top of the release description (auto-generated commit/PR notes are still appended below it)."
         default: ""
+  # GeneralsX @feature rebrand 15/09/2026 Tag-driven releases: pushing a
+  # vX.Y.Z tag builds the APK with the version derived from that tag
+  # (versionCode/versionName via -PversionTag) and publishes the Release
+  # automatically — no manual dispatch, and the tag, the APK's versionName
+  # and the Release name can no longer drift apart.
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*.*.*-*'
 
 jobs:
   build-android:
@@ -431,15 +440,18 @@ jobs:
       - name: Set artifact version
         id: artifact
         run: |
-          # GeneralsX @feature Android port 08/07/2026 Version numbers are
-          # manually managed (android/app/build.gradle), not auto-bumped from
-          # the workflow run number anymore. A manual "Run workflow" dispatch
-          # can still override them for a one-off build via the version_name /
-          # version_code inputs above; a normal push build passes neither, so
-          # Gradle falls back to whatever is committed in build.gradle.
+          # GeneralsX @feature rebrand 15/09/2026 Tag-driven versioning: a tag
+          # push (vX.Y.Z) is the authoritative release path -- the tag is
+          # handed to Gradle (-PversionTag) and versionCode/versionName are
+          # derived from it in android/app/build.gradle. A manual dispatch can
+          # still override explicitly (version_name/version_code inputs, as
+          # before); a plain push/PR build uses the committed defaults.
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "version_tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
           echo "version_code=${{ inputs.version_code || '' }}" >> "$GITHUB_OUTPUT"
           echo "version_name=${{ inputs.version_name || '' }}" >> "$GITHUB_OUTPUT"
-          echo "apk_name=GeneralsXZH-android-run${{ github.run_number }}.apk" >> "$GITHUB_OUTPUT"
+          echo "apk_name=Generals-android-run${{ github.run_number }}.apk" >> "$GITHUB_OUTPUT"
 
       - name: Package APK
         env:
@@ -447,10 +459,11 @@ jobs:
           # jniLibs/, the SDL3 Java glue, and fonts, then invokes Gradle. Same
           # fixed debug.keystore every run (committed in android/app/) is what
           # makes consecutive CI builds installable as updates over each other
-          # rather than requiring an uninstall, PROVIDED versionCode was bumped
-          # by hand (in build.gradle or via a manual-dispatch override) since
-          # the last build the user actually installed.
+          # rather than requiring an uninstall. versionTag comes from the
+          # triggering git tag on tag pushes; CODE/NAME overrides stay for
+          # one-off manual dispatches.
           GX_ANDROID_STAGING: ${{ github.workspace }}/android-staging
+          GX_ANDROID_VERSION_TAG: ${{ steps.artifact.outputs.version_tag }}
           GX_ANDROID_VERSION_CODE: ${{ steps.artifact.outputs.version_code }}
           GX_ANDROID_VERSION_NAME: ${{ steps.artifact.outputs.version_name }}
         run: |
@@ -532,20 +545,25 @@ jobs:
       # tagged from version_name (set alongside it above) so the release name
       # always matches what's baked into the APK's own versionName.
       - name: Create GitHub Release
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_release }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.create_release) || github.event_name == 'push' }}
         run: |
           set -euo pipefail
-          if [ -z "${{ inputs.version_name }}" ]; then
-            echo "::error::create_release requires version_name to be set (used as the release tag)."
-            exit 1
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "release_tag=${{ github.ref_name }}" >> "$GITHUB_ENV"
+          else
+            if [ -z "${{ inputs.version_name }}" ]; then
+              echo "::error::create_release requires version_name to be set (used as the release tag)."
+              exit 1
+            fi
+            echo "release_tag=v${{ inputs.version_name }}" >> "$GITHUB_ENV"
           fi
 
       - name: Publish GitHub Release
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_release }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.create_release) || github.event_name == 'push' }}
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ inputs.version_name }}
-          name: v${{ inputs.version_name }}
+          tag_name: ${{ env.release_tag }}
+          name: ${{ env.release_tag }}
           body: ${{ inputs.release_notes }}
           files: |
             ${{ steps.locate.outputs.path }}

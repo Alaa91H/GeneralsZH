@@ -34,7 +34,7 @@
 // exact flow here, including the refresh_token cache so repeat logins skip
 // the browser entirely (LoginWithToken).
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -53,10 +53,10 @@ import org.json.JSONObject;
 
 import java.security.SecureRandom;
 
-public class GeneralsOnlineActivity extends Activity {
+public class OnlineActivity extends Activity {
 
     // GeneralsX @bugfix Android port 12/07/2026 session store + HTTP auth
-    // calls moved to GeneralsOnlineSession so GeneralsZHActivity can refresh
+    // calls moved to OnlineSession so GameActivity can refresh
     // the session token at game launch (they expire server-side within
     // hours; a stale marker file made the game's Online button fail with
     // "HTTP response code said error"/401 despite a "valid" local session).
@@ -69,12 +69,12 @@ public class GeneralsOnlineActivity extends Activity {
     private static final String LOGIN_URL_FMT = "https://www.playgenerals.online/login/?gamecode=%s&client=%s";
     private static final String CLIENT_ID = "custom_third_party_client";
 
-    private static final String PREFS_NAME = GeneralsOnlineSession.PREFS_NAME;
-    private static final String PREF_SESSION_TOKEN = GeneralsOnlineSession.PREF_SESSION_TOKEN;
-    private static final String PREF_REFRESH_TOKEN = GeneralsOnlineSession.PREF_REFRESH_TOKEN;
-    private static final String PREF_USER_ID = GeneralsOnlineSession.PREF_USER_ID;
-    private static final String PREF_DISPLAY_NAME = GeneralsOnlineSession.PREF_DISPLAY_NAME;
-    private static final String PREF_WS_URI = GeneralsOnlineSession.PREF_WS_URI;
+    private static final String PREFS_NAME = OnlineSession.PREFS_NAME;
+    private static final String PREF_SESSION_TOKEN = OnlineSession.PREF_SESSION_TOKEN;
+    private static final String PREF_REFRESH_TOKEN = OnlineSession.PREF_REFRESH_TOKEN;
+    private static final String PREF_USER_ID = OnlineSession.PREF_USER_ID;
+    private static final String PREF_DISPLAY_NAME = OnlineSession.PREF_DISPLAY_NAME;
+    private static final String PREF_WS_URI = OnlineSession.PREF_WS_URI;
 
     // Matches the reference client's own 1s poll cadence
     // (OnlineServices_Auth.cpp::Tick, timeBetweenChecks = 1000).
@@ -115,7 +115,7 @@ public class GeneralsOnlineActivity extends Activity {
     private void buildUi() {
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
-        shell.setBackgroundColor(UiKit.color(this, R.color.gzh_background));
+        shell.setBackgroundColor(UiKit.color(this, R.color.gen_background));
         setContentView(shell);
         InsetUtil.applySafeInsets(shell);
 
@@ -128,18 +128,18 @@ public class GeneralsOnlineActivity extends Activity {
         LinearLayout page = UiKit.scrollingPage(host);
 
         LinearLayout statusCard = UiKit.card(page);
-        UiKit.sectionHeader(statusCard, R.drawable.ic_gzh_account,
+        UiKit.sectionHeader(statusCard, R.drawable.ic_gen_account,
             getString(R.string.online_window_title), false);
         statusText = UiKit.body(statusCard, null);
         statusText.setTextIsSelectable(true);
-        signOutButton = UiKit.button(statusCard, UiKit.BTN_DANGER, R.drawable.ic_gzh_trash,
+        signOutButton = UiKit.button(statusCard, UiKit.BTN_DANGER, R.drawable.ic_gen_trash,
             getString(R.string.online_button_sign_out), this::onSignOut);
 
         LinearLayout stepsCard = UiKit.card(page);
-        UiKit.sectionHeader(stepsCard, R.drawable.ic_gzh_check,
+        UiKit.sectionHeader(stepsCard, R.drawable.ic_gen_check,
             getString(R.string.online_card_sign_in), false);
         UiKit.supporting(stepsCard, getString(R.string.online_signin_help));
-        signInButton = UiKit.button(stepsCard, UiKit.BTN_PRIMARY, R.drawable.ic_gzh_account,
+        signInButton = UiKit.button(stepsCard, UiKit.BTN_PRIMARY, R.drawable.ic_gen_account,
             getString(R.string.online_button_sign_in), this::onSignIn);
     }
 
@@ -165,7 +165,7 @@ public class GeneralsOnlineActivity extends Activity {
         signInButton.setEnabled(false);
         statusText.setText(R.string.online_status_signing_in);
         new Thread(() -> {
-            GeneralsOnlineSession.AuthResult result = callLoginWithToken(refreshToken);
+            OnlineSession.AuthResult result = callLoginWithToken(refreshToken);
             handler.post(() -> {
                 busy = false;
                 signInButton.setEnabled(true);
@@ -182,7 +182,7 @@ public class GeneralsOnlineActivity extends Activity {
                     // GeneralsX @bugfix Android port 08/30/2026 result==null
                     // (or an unexpected state) means the request never got a
                     // real answer -- network error or a blocked/rejected
-                    // request (see GeneralsOnlineSession.postJson). That is
+                    // request (see OnlineSession.postJson). That is
                     // NOT the same as "this refresh token is invalid", so
                     // don't clearSession() here: a transient connectivity
                     // problem used to silently wipe a perfectly good cached
@@ -252,12 +252,12 @@ public class GeneralsOnlineActivity extends Activity {
 
     private void pollOnce(String code) {
         new Thread(() -> {
-            GeneralsOnlineSession.AuthResult result = callCheckLogin(code);
+            OnlineSession.AuthResult result = callCheckLogin(code);
             handler.post(() -> handlePollResult(code, result));
         }).start();
     }
 
-    private void handlePollResult(String code, GeneralsOnlineSession.AuthResult result) {
+    private void handlePollResult(String code, OnlineSession.AuthResult result) {
         if (result == null) {
             busy = false;
             signInButton.setEnabled(true);
@@ -299,13 +299,13 @@ public class GeneralsOnlineActivity extends Activity {
 
     // GeneralsX @bugfix Android port 08/30/2026 A user reported the network-
     // error screen with no way to see WHY it failed (no adb/logcat access).
-    // GeneralsOnlineSession.lastNetworkErrorDetail now captures the actual
+    // OnlineSession.lastNetworkErrorDetail now captures the actual
     // host + HTTP status/body snippet (or exception) from the failed
     // request -- surface it right on screen instead of just the generic
     // string. statusText already has setTextIsSelectable(true), so this is
     // also copyable to paste into a bug report.
     private String withNetworkErrorDetail(String baseMessage) {
-        String detail = GeneralsOnlineSession.lastNetworkErrorDetail;
+        String detail = OnlineSession.lastNetworkErrorDetail;
         if (detail == null || detail.isEmpty()) {
             return baseMessage;
         }
@@ -313,7 +313,7 @@ public class GeneralsOnlineActivity extends Activity {
     }
 
     // Runs on a background thread.
-    private GeneralsOnlineSession.AuthResult callCheckLogin(String code) {
+    private OnlineSession.AuthResult callCheckLogin(String code) {
         JSONObject body = new JSONObject();
         try {
             body.put("code", code);
@@ -324,20 +324,20 @@ public class GeneralsOnlineActivity extends Activity {
         } catch (Exception e) {
             return null;
         }
-        return GeneralsOnlineSession.postJson("CheckLogin", body, null);
+        return OnlineSession.postJson("CheckLogin", body, null);
     }
 
     // Runs on a background thread.
-    private GeneralsOnlineSession.AuthResult callLoginWithToken(String refreshToken) {
-        return GeneralsOnlineSession.loginWithToken(refreshToken);
+    private OnlineSession.AuthResult callLoginWithToken(String refreshToken) {
+        return OnlineSession.loginWithToken(refreshToken);
     }
 
-    private void saveSession(GeneralsOnlineSession.AuthResult result) {
-        GeneralsOnlineSession.saveSession(this, result);
+    private void saveSession(OnlineSession.AuthResult result) {
+        OnlineSession.saveSession(this, result);
     }
 
     private void clearSession() {
-        GeneralsOnlineSession.clearSession(this);
+        OnlineSession.clearSession(this);
     }
 
     private void onSignOut() {

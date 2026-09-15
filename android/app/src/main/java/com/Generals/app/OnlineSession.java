@@ -19,7 +19,7 @@
 // GeneralsX @bugfix Android port 12/07/2026
 //
 // Shared GeneralsOnline session store + HTTP auth calls, extracted from
-// GeneralsOnlineActivity so the GAME activity can refresh the session too.
+// OnlineActivity so the GAME activity can refresh the session too.
 //
 // Why: the native game reads a static session_token from the marker file
 // written at sign-in time. GeneralsOnline session tokens expire server-side
@@ -29,10 +29,10 @@
 // their sign-in "looked" fine. The launcher already caches a refresh_token
 // and knows how to trade it for a fresh session (LoginWithToken) -- the fix
 // is simply to do that on every game launch, before native code reads the
-// marker file, which GeneralsZHActivity.onCreate() now does via
+// marker file, which GameActivity.onCreate() now does via
 // refreshSessionAsync().
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -48,9 +48,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
-final class GeneralsOnlineSession {
+final class OnlineSession {
 
-    private static final String TAG = "GeneralsOnlineSession";
+    private static final String TAG = "OnlineSession";
 
     static final String API_BASE = "https://api.playgenerals.online/env/prod/contract/1/";
 
@@ -95,7 +95,7 @@ final class GeneralsOnlineSession {
     // one login/refresh attempt at a time.
     static volatile String lastNetworkErrorDetail = "";
 
-    private GeneralsOnlineSession() {
+    private OnlineSession() {
     }
 
     // Runs on a background thread.

@@ -12,7 +12,7 @@
 #   4. gradle assembleDebug -> app-debug.apk, ready for adb install.
 #
 # Game .big archives are NOT packaged: the user copies their own game data to
-# /storage/emulated/0/Android/data/com.generalsx.zerohour/files/ (see
+# /storage/emulated/0/Android/data/com.Generals.app/files/ (see
 # docs/port/ANDROID_PORT.md).
 #
 # Usage: ./scripts/build/android/package-android-zh.sh [--install]
@@ -299,12 +299,14 @@ else
     echo "       Android Studio (which generates the wrapper), then re-run this script."
     exit 1
 fi
-# versionCode/versionName are managed by hand in android/app/build.gradle
-# (versionCode must strictly increase for Android to accept installing one
-# APK "over" another via a normal tap install; adb install -r doesn't care).
+# versionCode/versionName come from the git tag when one is checked out
+# (tag-driven versioning: -PversionTag=vX.Y.Z -> the Gradle helpers in
+# android/app/build.gradle derive both), falling back to the committed
+# defaults in build.gradle for untagged local builds.
 # GX_ANDROID_VERSION_CODE / GX_ANDROID_VERSION_NAME let a manual CI dispatch
 # (or a local one-off build) override either without editing build.gradle;
-# leave both unset to just build whatever is committed there.
+# GX_ANDROID_VERSION_TAG (set by CI from the triggering git tag) wins over
+# the committed defaults but loses to explicit CODE/NAME overrides.
 # (Plain string, not a bash array: an empty array expanded with "${arr[@]}"
 # under `set -u` throws "unbound variable" on bash < 4.4 — still the default
 # /bin/bash on macOS, which this script also runs on.)
@@ -314,6 +316,9 @@ if [[ -n "${GX_ANDROID_VERSION_CODE:-}" ]]; then
 fi
 if [[ -n "${GX_ANDROID_VERSION_NAME:-}" ]]; then
     GRADLE_VERSION_ARG="${GRADLE_VERSION_ARG} -PandroidVersionName=${GX_ANDROID_VERSION_NAME}"
+fi
+if [[ -z "${GRADLE_VERSION_ARG}" && -n "${GX_ANDROID_VERSION_TAG:-}" ]]; then
+    GRADLE_VERSION_ARG="-PversionTag=${GX_ANDROID_VERSION_TAG}"
 fi
 
 echo "==> ${GRADLE_CMD} assembleDebug ${GRADLE_VERSION_ARG}"
@@ -331,6 +336,6 @@ if [[ $DO_INSTALL -eq 1 ]]; then
     echo "==> adb install -r"
     adb install -r "${APK}"
     echo "==> Installed. Game data goes to:"
-    echo "    /storage/emulated/0/Android/data/com.generalsx.zerohour/files/"
-    echo "    e.g.: adb push ~/GeneralsX/GeneralsZH/. /storage/emulated/0/Android/data/com.generalsx.zerohour/files/"
+    echo "    /storage/emulated/0/Android/data/com.Generals.app/files/"
+    echo "    e.g.: adb push ~/GeneralsX/GeneralsZH/. /storage/emulated/0/Android/data/com.Generals.app/files/"
 fi

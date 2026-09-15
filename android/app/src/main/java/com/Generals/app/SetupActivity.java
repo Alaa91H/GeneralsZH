@@ -26,7 +26,7 @@
 // picking where the game lives and seeing why it crashed are needed on
 // every single install, so they live here now.
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.Manifest;
 import android.app.Activity;
@@ -78,7 +78,7 @@ import java.io.File;
 
 public class SetupActivity extends Activity implements ModsPanel.Host {
 
-    static final String PREFS_NAME = "generalszh_setup";
+    static final String PREFS_NAME = "generals_setup";
     static final String PREF_GAME_PATH = "game_path";
     // GeneralsX @feature Android port 06/09/2026 Optional folder holding the
     // BASE Generals archives, for copies that keep them somewhere the engine
@@ -95,7 +95,20 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     // fresh install can recover it automatically instead of re-prompting.
     private static final String EXTERNAL_MARKER_NAME = ".generalszh_gamepath.txt";
 
-    // Marker files SDL3Main.cpp / GeneralsZHActivity check for on launch —
+    // GeneralsX @feature rebrand 15/09/2026 The app was rebranded from the
+    // package com.generalsx.zerohour to com.Generals.app. A new applicationId
+    // means Android gives it a FRESH private-data directory -- SharedPreferences,
+    // getFilesDir() caches, and the GeneralsOnline session token all reset to
+    // empty, and every existing user would have to re-pick their game folder
+    // and re-sign-in. One-time migration: on first launch, if this install's
+    // own prefs have no game path yet, copy the settings blob (and the mod
+    // selection state that lives in the same file) from the legacy package's
+    // prefs if that app is still installed. Read-only toward the old app;
+    // this install then owns its own copy from then on. The external
+    // .generalszh_gamepath.txt marker (above) already covers the uninstall
+    // case; this covers the "both apps installed side by side" case.
+
+    // Marker files SDL3Main.cpp / GameActivity check for on launch —
     // must match GameEngine/CMake's GeneralsMD/Code/Main/SDL3Main.cpp exactly.
     private static final String[] REQUIRED_GAME_FILES = { "INIZH.big", "INI.big" };
 
@@ -126,6 +139,8 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
             currentTab = savedInstanceState.getInt(STATE_TAB, TAB_HOME);
         }
 
+        migrateLegacyPackageSettings();
+
         // GeneralsX @bugfix Android port 08/07/2026 This screen is the ONLY
         // way to reach "View Logs" without adb, so it must never be the thing
         // that crashes. Any future Material/theme incompatibility falls back
@@ -142,6 +157,57 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putInt(STATE_TAB, currentTab);
+    }
+
+    /**
+     * GeneralsX @feature rebrand 15/09/2026 Copies the settings blob from the
+     * pre-rebrand package (com.generalsx.zerohour) on this device into this
+     * install's own prefs, once, only when this install has never saved a
+     * game path itself. Kept tolerant of the legacy app being absent (the
+     * normal case on fresh devices) and of every failure mode -- a migration
+     * that cannot read the old prefs must never block first-run setup.
+     */
+    private void migrateLegacyPackageSettings() {
+        SharedPreferences ours = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        if (ours.getString(PREF_GAME_PATH, null) != null) {
+            return; // this install is already configured; nothing to migrate
+        }
+        android.content.Context legacy;
+        try {
+            legacy = createPackageContext("com.generalsx.zerohour",
+                CONTEXT_IGNORE_SECURITY);
+        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+            return; // old app not installed (or already uninstalled) -- nothing to do
+        }
+        SharedPreferences old = legacy.getSharedPreferences("generalszh_setup", MODE_PRIVATE);
+        String gamePath = old.getString(PREF_GAME_PATH, null);
+        if (gamePath == null || gamePath.isEmpty()) {
+            return; // old install never configured either
+        }
+        android.content.SharedPreferences.Editor edit = ours.edit();
+        edit.putString(PREF_GAME_PATH, gamePath);
+        java.util.Map<String, ?> all = old.getAll();
+        for (String key : new String[] {PREF_BASE_GENERALS_PATH, "mods_sort", "mods_browsing"}) {
+            Object v = all.get(key);
+            if (v instanceof String) {
+                edit.putString(key, (String) v);
+            } else if (v instanceof Boolean) {
+                edit.putBoolean(key, (Boolean) v);
+            } else if (v instanceof Integer) {
+                edit.putInt(key, (Integer) v);
+            }
+        }
+        edit.apply();
+        // Mirror the recovered path into the native marker the same way
+        // getSavedGamePath()'s external-marker recovery does, so the very
+        // first launch of the rebranded app can already reach the engine.
+        File nativeMarker = new File(getFilesDir(), "gamedata_path.txt");
+        try (java.io.FileWriter w = new java.io.FileWriter(nativeMarker, false)) {
+            w.write(gamePath);
+            w.write("\n");
+        } catch (java.io.IOException e) {
+            // Not fatal: the user can re-save once via Setup.
+        }
     }
 
     // GeneralsX @bugfix Android port launcher-ui-2026 08/09/2026 The fallback
@@ -195,7 +261,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         super.onResume();
         // GeneralsX @bugfix Android port 31/07/2026 onLaunchGame() forces this
         // Activity to landscape right before starting the game (see its
-        // comment) so the rotation settles before GeneralsZHActivity's native
+        // comment) so the rotation settles before GameActivity's native
         // window-size probe runs. That request otherwise sticks on this
         // Activity instance indefinitely, so coming back here (Back from the
         // game, or from any child screen) left Setup stuck landscape instead
@@ -220,7 +286,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     // Nothing was dropped in the process: every card, button, switch, slider
     // and status line that existed before still exists, and every string
     // resource is still used. See showTab() for where each one landed.
-    private static final String STATE_TAB = "gzh_tab";
+    private static final String STATE_TAB = "gen_tab";
     private static final int TAB_HOME = 1;
     private static final int TAB_GRAPHICS = 2;
     private static final int TAB_INTERFACE = 3;
@@ -244,7 +310,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
-        shell.setBackgroundColor(UiKit.color(this, R.color.gzh_background));
+        shell.setBackgroundColor(UiKit.color(this, R.color.gen_background));
         setContentView(shell);
         // Edge-to-edge still handled the same way: pad the outermost view by
         // the system bars/cutout so the app bar clears the status bar and the
@@ -253,7 +319,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
         appBarTitle = UiKit.appBar(shell, getString(R.string.setup_title),
             getString(R.string.nav_tab_home),
-            R.drawable.ic_gzh_doc, getString(R.string.setup_button_view_logs), this::onViewLogs);
+            R.drawable.ic_gen_doc, getString(R.string.setup_button_view_logs), this::onViewLogs);
 
         contentHost = new FrameLayout(this);
         shell.addView(contentHost, new LinearLayout.LayoutParams(
@@ -281,7 +347,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         nav.setLayoutDirection(android.view.View.LAYOUT_DIRECTION_LTR);
         nav.setTextDirection(android.view.View.TEXT_DIRECTION_LOCALE);
 
-        nav.setBackgroundColor(UiKit.color(this, R.color.gzh_surface_container_low));
+        nav.setBackgroundColor(UiKit.color(this, R.color.gen_surface_container_low));
         nav.setElevation(0f);
         nav.setLabelVisibilityMode(NavigationBarView.LABEL_VISIBILITY_LABELED);
         nav.setItemIconSize(UiKit.dp(this, 22));
@@ -289,20 +355,20 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         // active-indicator pill, so it takes the on-container colour.
         android.content.res.ColorStateList itemTint = new android.content.res.ColorStateList(
             new int[][] { new int[] { android.R.attr.state_checked }, new int[0] },
-            new int[] { UiKit.color(this, R.color.gzh_on_primary_container),
-                        UiKit.color(this, R.color.gzh_on_surface_faint) });
+            new int[] { UiKit.color(this, R.color.gen_on_primary_container),
+                        UiKit.color(this, R.color.gen_on_surface_faint) });
         nav.setItemIconTintList(itemTint);
         nav.setItemTextColor(itemTint);
-        nav.setItemActiveIndicatorColor(UiKit.tint(this, R.color.gzh_primary_container));
-        nav.setItemRippleColor(UiKit.tint(this, R.color.gzh_ripple_primary));
+        nav.setItemActiveIndicatorColor(UiKit.tint(this, R.color.gen_primary_container));
+        nav.setItemRippleColor(UiKit.tint(this, R.color.gen_ripple_primary));
 
         Menu menu = nav.getMenu();
-        menu.add(Menu.NONE, TAB_HOME, 0, R.string.nav_tab_home).setIcon(R.drawable.ic_gzh_home);
-        menu.add(Menu.NONE, TAB_GRAPHICS, 1, R.string.nav_tab_graphics).setIcon(R.drawable.ic_gzh_display);
-        menu.add(Menu.NONE, TAB_INTERFACE, 2, R.string.nav_tab_interface).setIcon(R.drawable.ic_gzh_globe);
-        menu.add(Menu.NONE, TAB_TOOLS, 3, R.string.nav_tab_tools).setIcon(R.drawable.ic_gzh_wrench);
-        menu.add(Menu.NONE, TAB_MODS, 4, R.string.nav_tab_mods).setIcon(R.drawable.ic_gzh_chip);
-        menu.add(Menu.NONE, TAB_HELP, 5, R.string.nav_tab_help).setIcon(R.drawable.ic_gzh_info);
+        menu.add(Menu.NONE, TAB_HOME, 0, R.string.nav_tab_home).setIcon(R.drawable.ic_gen_home);
+        menu.add(Menu.NONE, TAB_GRAPHICS, 1, R.string.nav_tab_graphics).setIcon(R.drawable.ic_gen_display);
+        menu.add(Menu.NONE, TAB_INTERFACE, 2, R.string.nav_tab_interface).setIcon(R.drawable.ic_gen_globe);
+        menu.add(Menu.NONE, TAB_TOOLS, 3, R.string.nav_tab_tools).setIcon(R.drawable.ic_gen_wrench);
+        menu.add(Menu.NONE, TAB_MODS, 4, R.string.nav_tab_mods).setIcon(R.drawable.ic_gen_chip);
+        menu.add(Menu.NONE, TAB_HELP, 5, R.string.nav_tab_help).setIcon(R.drawable.ic_gen_info);
 
         nav.setOnItemSelectedListener(item -> {
             showTab(item.getItemId());
@@ -414,24 +480,24 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
     private void buildHomeSection(LinearLayout page) {
         // The one thing this app exists to do, as the first thing on it.
-        UiKit.button(page, UiKit.BTN_PRIMARY, R.drawable.ic_gzh_play,
+        UiKit.button(page, UiKit.BTN_PRIMARY, R.drawable.ic_gen_play,
             getString(R.string.setup_button_launch_game), this::onLaunchGame);
 
         LinearLayout folder = UiKit.card(page);
-        UiKit.sectionHeader(folder, R.drawable.ic_gzh_folder,
+        UiKit.sectionHeader(folder, R.drawable.ic_gen_folder,
             getString(R.string.setup_card_game_folder), false);
 
         statusText = UiKit.body(folder, null);
         statusText.setTextIsSelectable(true);
 
-        UiKit.button(folder, UiKit.BTN_TONAL, R.drawable.ic_gzh_folder,
+        UiKit.button(folder, UiKit.BTN_TONAL, R.drawable.ic_gen_folder,
             getString(R.string.setup_button_select_game_folder), this::onSelectGameFolder);
-        UiKit.button(folder, UiKit.BTN_TONAL, R.drawable.ic_gzh_folder,
+        UiKit.button(folder, UiKit.BTN_TONAL, R.drawable.ic_gen_folder,
             getString(R.string.setup_button_select_base_generals), this::onSelectBaseGeneralsFolder);
-        UiKit.button(folder, UiKit.BTN_DANGER, R.drawable.ic_gzh_broom,
+        UiKit.button(folder, UiKit.BTN_DANGER, R.drawable.ic_gen_broom,
             getString(R.string.setup_button_clear_game_folder), this::onClearGameFolder);
         if (getBaseGeneralsPath() != null) {
-            UiKit.button(folder, UiKit.BTN_DANGER, R.drawable.ic_gzh_broom,
+            UiKit.button(folder, UiKit.BTN_DANGER, R.drawable.ic_gen_broom,
                 getString(R.string.setup_button_clear_base_generals), this::onClearBaseGeneralsFolder);
         }
 
@@ -446,24 +512,24 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
     private void buildHelpSection(LinearLayout page) {
         LinearLayout about = UiKit.card(page);
-        UiKit.sectionHeader(about, R.drawable.ic_gzh_info,
+        UiKit.sectionHeader(about, R.drawable.ic_gen_info,
             getString(R.string.setup_window_title), false);
         UiKit.supporting(about, getString(R.string.setup_subtitle));
-        UiKit.chip(about, R.drawable.ic_gzh_check, versionLabel(),
-            R.color.gzh_primary, R.color.gzh_surface_container_high);
+        UiKit.chip(about, R.drawable.ic_gen_check, versionLabel(),
+            R.color.gen_primary, R.color.gen_surface_container_high);
 
         LinearLayout help = UiKit.card(page);
-        UiKit.sectionHeader(help, R.drawable.ic_gzh_doc,
+        UiKit.sectionHeader(help, R.drawable.ic_gen_doc,
             getString(R.string.setup_card_how_it_works), false);
         UiKit.supporting(help, getString(R.string.setup_how_it_works_body));
 
         // GeneralsX @feature Android port app-update 15/09/2026 Sideloaded
         // APKs get no Play-store update path; this is the self-update flow.
         LinearLayout updates = UiKit.card(page);
-        UiKit.sectionHeader(updates, R.drawable.ic_gzh_download,
+        UiKit.sectionHeader(updates, R.drawable.ic_gen_download,
             getString(R.string.update_check_label), false);
         UiKit.supporting(updates, getString(R.string.update_check_note));
-        UiKit.button(updates, UiKit.BTN_TONAL, R.drawable.ic_gzh_refresh,
+        UiKit.button(updates, UiKit.BTN_TONAL, R.drawable.ic_gen_refresh,
             getString(R.string.update_check_now),
             () -> AppUpdateChecker.checkAndOffer(this));
     }
@@ -487,7 +553,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     // would make Back do the wrong thing.
     private void buildModsSection(LinearLayout page) {
         LinearLayout card = UiKit.card(page);
-        UiKit.listRow(card, R.drawable.ic_gzh_chip,
+        UiKit.listRow(card, R.drawable.ic_gen_chip,
             getString(R.string.setup_button_mods),
             getString(R.string.setup_status_mods_note),
             this::onOpenMods);
@@ -519,7 +585,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
     private void buildLaunchOptionsSection(LinearLayout page) {
         LinearLayout card = UiKit.card(page);
-        UiKit.sectionHeader(card, R.drawable.ic_gzh_sliders,
+        UiKit.sectionHeader(card, R.drawable.ic_gen_sliders,
             getString(R.string.setup_fixed_resolution), false);
 
         CharSequence[] resLabels = new CharSequence[FIXED_RESOLUTIONS.length + 1];
@@ -544,7 +610,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         UiKit.helpText(card, getString(R.string.setup_fixed_resolution_note));
 
         LinearLayout argsCard = UiKit.card(page);
-        UiKit.sectionHeader(argsCard, R.drawable.ic_gzh_terminal,
+        UiKit.sectionHeader(argsCard, R.drawable.ic_gen_terminal,
             getString(R.string.setup_launch_args_title), false);
         launchArgsEdit = new EditText(this);
         launchArgsEdit.setHint(R.string.setup_launch_args_hint);
@@ -557,7 +623,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         launchArgsEdit.setText(readLaunchArgsText());
         argsCard.addView(launchArgsEdit, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        UiKit.button(argsCard, UiKit.BTN_TONAL, R.drawable.ic_gzh_save,
+        UiKit.button(argsCard, UiKit.BTN_TONAL, R.drawable.ic_gen_save,
             getString(R.string.setup_button_save), this::onSaveLaunchArgs);
         UiKit.helpText(argsCard, getString(R.string.setup_launch_args_note));
     }
@@ -634,7 +700,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
     private void buildLogsSection(LinearLayout page) {
         LinearLayout card = UiKit.card(page);
-        UiKit.listRow(card, R.drawable.ic_gzh_doc,
+        UiKit.listRow(card, R.drawable.ic_gen_doc,
             getString(R.string.setup_button_view_logs),
             getString(R.string.setup_status_logs_note),
             this::onViewLogs);
@@ -649,24 +715,24 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         LinearLayout content = UiKit.card(root);
         // The current language is the value the header carries, so the card
         // answers "what is it set to" before you read a word of it.
-        TextView value = UiKit.sectionHeader(content, R.drawable.ic_gzh_globe,
+        TextView value = UiKit.sectionHeader(content, R.drawable.ic_gen_globe,
             getString(R.string.setup_card_language), true);
         value.setText(LocaleHelper.displayNameFor(this, LocaleHelper.getSavedLanguageTag(this)));
         // The full "Language: X" sentence is still what a screen reader hears.
         content.setContentDescription(getString(R.string.setup_language_status,
             LocaleHelper.displayNameFor(this, LocaleHelper.getSavedLanguageTag(this))));
 
-        UiKit.button(content, UiKit.BTN_TONAL, R.drawable.ic_gzh_globe,
+        UiKit.button(content, UiKit.BTN_TONAL, R.drawable.ic_gen_globe,
             getString(R.string.setup_button_change_language), this::onChangeLanguage);
 
         migrateGameTextTokenFromMarker();
         gameLanguageStatusView = UiKit.supporting(content, null);
         updateGameLanguageStatusView();
 
-        UiKit.button(content, UiKit.BTN_TONAL, R.drawable.ic_gzh_globe,
+        UiKit.button(content, UiKit.BTN_TONAL, R.drawable.ic_gen_globe,
             getString(R.string.setup_button_game_text_language), this::onChangeGameTextLanguage);
 
-        languagePackButton = UiKit.button(content, UiKit.BTN_OUTLINE, R.drawable.ic_gzh_download,
+        languagePackButton = UiKit.button(content, UiKit.BTN_OUTLINE, R.drawable.ic_gen_download,
             getString(R.string.setup_button_download_langpack), this::onDownloadLanguagePack);
 
         UiKit.helpText(content, getString(R.string.setup_language_help));
@@ -928,7 +994,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         LinearLayout content = UiKit.card(root);
         // The live percentage reads out of the header, right-aligned in the
         // accent, instead of a separate line above the track.
-        uiScaleLabel = UiKit.sectionHeader(content, R.drawable.ic_gzh_sliders,
+        uiScaleLabel = UiKit.sectionHeader(content, R.drawable.ic_gen_sliders,
             getString(R.string.setup_card_text_size), true);
 
         int startPercent = readUiScalePercent();
@@ -940,18 +1006,18 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         // The floating bubble would show a bare untranslated number on top of
         // the value the header already spells out properly.
         uiScaleSlider.setLabelBehavior(LabelFormatter.LABEL_GONE);
-        uiScaleSlider.setTrackActiveTintList(UiKit.tint(this, R.color.gzh_primary));
-        uiScaleSlider.setTrackInactiveTintList(UiKit.tint(this, R.color.gzh_surface_container_highest));
-        uiScaleSlider.setThumbTintList(UiKit.tint(this, R.color.gzh_primary));
-        uiScaleSlider.setHaloTintList(UiKit.tint(this, R.color.gzh_ripple_primary));
+        uiScaleSlider.setTrackActiveTintList(UiKit.tint(this, R.color.gen_primary));
+        uiScaleSlider.setTrackInactiveTintList(UiKit.tint(this, R.color.gen_surface_container_highest));
+        uiScaleSlider.setThumbTintList(UiKit.tint(this, R.color.gen_primary));
+        uiScaleSlider.setHaloTintList(UiKit.tint(this, R.color.gen_ripple_primary));
         updateUiScaleLabel(startPercent);
         uiScaleSlider.addOnChangeListener((slider, value, fromUser) -> updateUiScaleLabel((int) value));
         LinearLayout.LayoutParams sliderLp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        sliderLp.topMargin = UiKit.dim(this, R.dimen.gzh_item_gap_tight);
+        sliderLp.topMargin = UiKit.dim(this, R.dimen.gen_item_gap_tight);
         content.addView(uiScaleSlider, sliderLp);
 
-        UiKit.button(content, UiKit.BTN_PRIMARY, R.drawable.ic_gzh_check,
+        UiKit.button(content, UiKit.BTN_PRIMARY, R.drawable.ic_gen_check,
             getString(R.string.setup_button_apply_text_size), () -> {
                 writeUiScalePercent((int) uiScaleSlider.getValue());
                 Toast.makeText(this, R.string.setup_toast_text_size_saved, Toast.LENGTH_LONG).show();
@@ -1132,7 +1198,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     // one commit away if this ever needs to go back.
     private void buildRenderBackendSection(LinearLayout root) {
         LinearLayout content = UiKit.card(root);
-        renderBackendStatusView = UiKit.sectionHeader(content, R.drawable.ic_gzh_display,
+        renderBackendStatusView = UiKit.sectionHeader(content, R.drawable.ic_gen_display,
             getString(R.string.setup_card_render_backend), true);
         renderBackendStatusView.setText(shortRenderBackendLabel(getRenderBackendChoice()));
         renderBackendStatusView.setContentDescription(getString(R.string.setup_render_backend_status,
@@ -1168,9 +1234,9 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
         String gpu = detectGpuName();
         if (!gpu.isEmpty()) {
-            UiKit.chip(content, R.drawable.ic_gzh_chip,
+            UiKit.chip(content, R.drawable.ic_gen_chip,
                 getString(R.string.setup_render_backend_gpu, gpu),
-                R.color.gzh_on_surface, R.color.gzh_surface_container_high);
+                R.color.gen_on_surface, R.color.gen_surface_container_high);
         }
 
         UiKit.helpText(content, getString(R.string.setup_render_backend_help));
@@ -1223,14 +1289,14 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
     private void buildCustomDriverSection(LinearLayout root) {
         LinearLayout content = UiKit.card(root);
-        UiKit.sectionHeader(content, R.drawable.ic_gzh_chip,
+        UiKit.sectionHeader(content, R.drawable.ic_gen_chip,
             getString(R.string.setup_card_vulkan_driver), false);
 
         customDriverStatusView = UiKit.supporting(content, customDriverStatusText());
 
-        UiKit.button(content, UiKit.BTN_TONAL, R.drawable.ic_gzh_download,
+        UiKit.button(content, UiKit.BTN_TONAL, R.drawable.ic_gen_download,
             getString(R.string.setup_button_import_driver), this::onImportCustomDriver);
-        UiKit.button(content, UiKit.BTN_DANGER, R.drawable.ic_gzh_refresh,
+        UiKit.button(content, UiKit.BTN_DANGER, R.drawable.ic_gen_refresh,
             getString(R.string.setup_button_reset_driver), this::onClearCustomDriver);
 
         UiKit.helpText(content, getString(R.string.setup_driver_help));
@@ -1561,30 +1627,30 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     // its style from ?attr/textInputStyle, so an outlined box on a view built
     // in code (rather than inflated from a layout with a style= attribute) is
     // a matter of constructing it against a ContextThemeWrapper that swaps
-    // that one attribute -- see ThemeOverlay.GeneralsZH.OutlinedField.
+    // that one attribute -- see ThemeOverlay.Generals.OutlinedField.
     private void buildDxvkConfigSection(LinearLayout root) {
         LinearLayout content = UiKit.card(root);
-        UiKit.sectionHeader(content, R.drawable.ic_gzh_terminal,
+        UiKit.sectionHeader(content, R.drawable.ic_gen_terminal,
             getString(R.string.setup_card_dxvk_config), false);
 
         ContextThemeWrapper fieldContext =
-            new ContextThemeWrapper(this, R.style.ThemeOverlay_GeneralsZH_OutlinedField);
+            new ContextThemeWrapper(this, R.style.ThemeOverlay_Generals_OutlinedField);
         TextInputLayout field = new TextInputLayout(fieldContext);
         field.setHint(R.string.setup_card_dxvk_config);
-        field.setBoxStrokeColor(UiKit.color(this, R.color.gzh_primary));
-        field.setHintTextColor(UiKit.tint(this, R.color.gzh_on_surface_variant));
+        field.setBoxStrokeColor(UiKit.color(this, R.color.gen_primary));
+        field.setHintTextColor(UiKit.tint(this, R.color.gen_on_surface_variant));
         // Keep the label in its floated position even when the box is empty:
         // loadDxvkConfigIntoEditor() puts the "select a game folder first"
         // prompt in the field's own hint, and an expanded label would sit on
         // top of it.
         field.setExpandedHintEnabled(false);
-        float boxRadius = UiKit.dim(this, R.dimen.gzh_radius_field);
+        float boxRadius = UiKit.dim(this, R.dimen.gen_radius_field);
         field.setBoxCornerRadii(boxRadius, boxRadius, boxRadius, boxRadius);
 
         TextInputEditText edit = new TextInputEditText(field.getContext());
         edit.setTypeface(android.graphics.Typeface.MONOSPACE);
         edit.setTextSize(12);
-        edit.setTextColor(UiKit.color(this, R.color.gzh_on_surface));
+        edit.setTextColor(UiKit.color(this, R.color.gen_on_surface));
         edit.setMinLines(6);
         edit.setMaxLines(20);
         edit.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
@@ -1597,13 +1663,13 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
         LinearLayout.LayoutParams fieldLp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        fieldLp.topMargin = UiKit.dim(this, R.dimen.gzh_item_gap_tight);
+        fieldLp.topMargin = UiKit.dim(this, R.dimen.gen_item_gap_tight);
         content.addView(field, fieldLp);
 
         LinearLayout row = UiKit.buttonRow(content);
-        UiKit.share(UiKit.button(row, UiKit.BTN_PRIMARY, R.drawable.ic_gzh_save,
+        UiKit.share(UiKit.button(row, UiKit.BTN_PRIMARY, R.drawable.ic_gen_save,
             getString(R.string.setup_button_dxvk_config_save), this::onSaveDxvkConfig), true);
-        UiKit.share(UiKit.button(row, UiKit.BTN_DANGER, R.drawable.ic_gzh_refresh,
+        UiKit.share(UiKit.button(row, UiKit.BTN_DANGER, R.drawable.ic_gen_refresh,
             getString(R.string.setup_button_dxvk_config_reset), this::onResetDxvkConfig), false);
 
         UiKit.helpText(content, getString(R.string.setup_dxvk_config_help));
@@ -1620,7 +1686,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     }
 
     // Pristine template this build ships, staged into getExternalFilesDir()
-    // by GeneralsZHActivity on first run -- same source
+    // by GameActivity on first run -- same source
     // copyBundledRuntimeIfMissing() copies from when a game folder is first
     // selected.
     private File bundledDxvkConfFile() {
@@ -1733,13 +1799,13 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     // switch pinned to the end edge, a hairline between rows.
     private void buildDiagnosticsSection(LinearLayout root) {
         LinearLayout content = UiKit.card(root);
-        UiKit.sectionHeader(content, R.drawable.ic_gzh_wrench,
+        UiKit.sectionHeader(content, R.drawable.ic_gen_wrench,
             getString(R.string.setup_card_diagnostics), false);
         UiKit.supporting(content, getString(R.string.setup_diagnostics_help));
 
-        diagnosticsNoFolderHint = UiKit.chip(content, R.drawable.ic_gzh_info,
+        diagnosticsNoFolderHint = UiKit.chip(content, R.drawable.ic_gen_info,
             getString(R.string.setup_diagnostics_no_folder),
-            R.color.gzh_status_warn, R.color.gzh_surface_container_high);
+            R.color.gen_status_warn, R.color.gen_surface_container_high);
 
         for (int i = 0; i < DIAGNOSTIC_MARKERS.length; i++) {
             if (i > 0) {
@@ -1795,27 +1861,27 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     }
 
     // GeneralsX @feature Android port 10/07/2026 GeneralsOnline (playgenerals.online)
-    // account status -- the actual sign-in flow lives in GeneralsOnlineActivity,
+    // account status -- the actual sign-in flow lives in OnlineActivity,
     // this is just a status line + entry point.
     private TextView onlineStatusView;
 
     private void buildGeneralsOnlineSection(LinearLayout root) {
         LinearLayout content = UiKit.card(root);
-        UiKit.sectionHeader(content, R.drawable.ic_gzh_account,
+        UiKit.sectionHeader(content, R.drawable.ic_gen_account,
             getString(R.string.setup_card_online), false);
 
         onlineStatusView = UiKit.supporting(content, null);
 
-        UiKit.button(content, UiKit.BTN_TONAL, R.drawable.ic_gzh_account,
+        UiKit.button(content, UiKit.BTN_TONAL, R.drawable.ic_gen_account,
             getString(R.string.setup_button_online_account), () ->
-                startActivity(new Intent(this, GeneralsOnlineActivity.class)));
+                startActivity(new Intent(this, OnlineActivity.class)));
     }
 
     private void refreshGeneralsOnlineStatus() {
         if (onlineStatusView == null) {
             return;
         }
-        String displayName = GeneralsOnlineActivity.getSignedInDisplayName(this);
+        String displayName = OnlineActivity.getSignedInDisplayName(this);
         onlineStatusView.setText(displayName != null
             ? getString(R.string.setup_online_signed_in, displayName)
             : getString(R.string.setup_online_signed_out));
@@ -1929,15 +1995,15 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
             int statusColorRes;
             if (!valid) {
                 sb.append(getString(R.string.setup_status_folder_invalid));
-                statusColorRes = R.color.gzh_status_error;
+                statusColorRes = R.color.gen_status_error;
             } else {
                 java.util.List<String> issues = findGameFolderIntegrityIssues(dir);
                 if (issues.isEmpty()) {
                     sb.append(getString(R.string.setup_status_folder_valid));
-                    statusColorRes = R.color.gzh_status_ok;
+                    statusColorRes = R.color.gen_status_ok;
                 } else {
                     sb.append(getString(R.string.setup_status_folder_incomplete, joinLines(issues)));
-                    statusColorRes = R.color.gzh_status_error;
+                    statusColorRes = R.color.gen_status_error;
                 }
             }
             int statusEnd = sb.length();
@@ -2311,7 +2377,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         return getSavedGamePath(this);
     }
 
-    // Public + static so GeneralsZHActivity uses the exact same recovery
+    // Public + static so GameActivity uses the exact same recovery
     // logic instead of its own copy that only ever checked SharedPreferences.
     static String getSavedGamePath(android.content.Context ctx) {
         SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
@@ -2885,7 +2951,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
             .putString(PREF_GAME_PATH, path)
             .apply();
-        // GeneralsZHActivity/SDL3Main.cpp read this plain-text marker on the
+        // GameActivity/SDL3Main.cpp read this plain-text marker on the
         // NEXT launch (native code has no Android SharedPreferences access).
         File marker = new File(getFilesDir(), "gamedata_path.txt");
         try (java.io.FileWriter w = new java.io.FileWriter(marker, false)) {
@@ -2922,7 +2988,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     // specifically means EVERY W3DFont load fails ("load miss" for every
     // single font in the log) and every button in the UI renders with no
     // text at all — copy all three, not just dxvk.conf. Static + takes
-    // bundledRoot explicitly so GeneralsZHActivity can also call this on
+    // bundledRoot explicitly so GameActivity can also call this on
     // every launch (an already-configured install needs the fix applied
     // retroactively, not just at folder-selection time).
     static void copyBundledRuntimeIfMissing(File bundledRoot, String gameFolderPath) {
@@ -2941,7 +3007,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     // would otherwise silently never reach an existing install, since the
     // very first copy would win forever. Always overwrite this one
     // subdirectory; bundledRoot's own copy is kept fresh the same way, see
-    // GeneralsZHActivity.copyAssetTree's ALWAYS_OVERWRITE_PREFIX.
+    // GameActivity.copyAssetTree's ALWAYS_OVERWRITE_PREFIX.
     private static void syncEngineWindowOverrides(File bundledRoot, String gameFolderPath) {
         File srcDir = new File(bundledRoot, "Window");
         File[] children = srcDir.listFiles();
@@ -3024,7 +3090,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
     // GeneralsX @bugfix Android port 31/07/2026 Setup is portrait-first now
     // (see AndroidManifest.xml/onCreate() comments), so launching straight
-    // into GeneralsZHActivity (locked landscape) can trigger a real
+    // into GameActivity (locked landscape) can trigger a real
     // portrait->landscape rotation right as the game's native window-size
     // probe (WW3D::Init()) runs -- previously sidestepped entirely by never
     // letting Setup rotate. Force landscape here and wait for
@@ -3036,7 +3102,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
     private void onLaunchGame() {
         if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            startActivity(new Intent(this, GeneralsZHActivity.class));
+            startActivity(new Intent(this, GameActivity.class));
             return;
         }
         pendingLaunchAfterRotation = true;
@@ -3048,7 +3114,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         super.onConfigurationChanged(newConfig);
         if (pendingLaunchAfterRotation && newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
             pendingLaunchAfterRotation = false;
-            startActivity(new Intent(this, GeneralsZHActivity.class));
+            startActivity(new Intent(this, GameActivity.class));
         }
     }
 

@@ -185,10 +185,17 @@ bool findLibraryForAddress(uintptr_t pc, char *outName, size_t outNameLen, uintp
 // real user id from getuid() instead of assuming user 0.
 char s_crashLogPath[256];
 
+// GeneralsX @refactor rebrand 15/09/2026 The application id used to be
+// hardcoded here as com.generalsx.zerohour; the app is now com.Generals.app
+// and hardcoding it a second time was the bug waiting to happen. The uid
+// answers the package question for us: Android assigns appId = uid -
+// userId*100000, and appId is the application id of whatever APK is
+// running, rebrand or not, no JNI needed and no string to keep in sync.
 void computeCrashLogPath() {
-	int userId = (int)(getuid() / 100000);
+	int uid = (int)getuid();
+	int userId = uid / 100000;
 	snprintf(s_crashLogPath, sizeof(s_crashLogPath),
-		"/data/user/%d/com.generalsx.zerohour/files/crash.log", userId);
+		"/data/user/%d/%d/files/crash.log", userId, uid - userId * 100000);
 }
 
 // GeneralsX @bugfix Android port 30/07/2026 crash.log is append-only by
@@ -207,10 +214,11 @@ void rotatePrevCrashLog() {
 	if (s_crashLogPath[0] == '\0') {
 		return;
 	}
-	int userId = (int)(getuid() / 100000);
+	int uid = (int)getuid();
+	int userId = uid / 100000;
 	char prevPath[256];
 	snprintf(prevPath, sizeof(prevPath),
-		"/data/user/%d/com.generalsx.zerohour/files/crash-prev.log", userId);
+		"/data/user/%d/%d/files/crash-prev.log", userId, uid - userId * 100000);
 	rename(s_crashLogPath, prevPath);
 }
 
@@ -423,10 +431,12 @@ void installAndroidCrashHandler() {
 	// or re-test. Written at load time (not signal time) so it costs the
 	// handler nothing inside the async-signal-safe path.
 	{
-		int crumbUserId = (int)(getuid() / 100000);
+		int crumbUid = (int)getuid();
+		int crumbUserId = crumbUid / 100000;
 		char modCfgPath[256];
 		snprintf(modCfgPath, sizeof(modCfgPath),
-			"/data/user/%d/com.generalsx.zerohour/files/mod_launch.cfg", crumbUserId);
+			"/data/user/%d/%d/files/mod_launch.cfg", crumbUserId,
+			crumbUid - crumbUserId * 100000);
 		FILE *modCfg = fopen(modCfgPath, "r");
 		if (modCfg != nullptr) {
 			char modLine[512] = {0};

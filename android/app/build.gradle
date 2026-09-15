@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace 'com.generalsx.zerohour'
+    namespace 'com.Generals.app'
     compileSdk 35
 
     // A fixed, committed debug keystore (android/app/debug.keystore) — NOT the
@@ -27,7 +27,7 @@ android {
     }
 
     defaultConfig {
-        applicationId 'com.generalsx.zerohour'
+        applicationId 'com.Generals.app'
         // API 28 (Android 9): floor that still covers the Redmi Note 8 Pro
         // line while giving bionic glob(3) and stable Vulkan loader behavior.
         // The real graphics gate is the GPU driver, not the OS version — see
@@ -37,7 +37,7 @@ android {
         // a drop to 24 (Android 7.0) while modernising the launcher UI, and
         // deliberately NOT lowered. The launcher's own Java is clean at 24 —
         // `gradle :app:lintDebug` with minSdk 24 reports zero NewApi findings
-        // anywhere under java/com/generalsx/zerohour/ (the one API-30 call,
+        // anywhere under java/com/Generals/app/ (the one API-30 call,
         // Environment.isExternalStorageManager() in onSelectGameFolder(), is
         // already behind a SDK_INT >= R gate, and FeatureInfo.version /
         // Comparator.comparing() are both exactly API 24). Two things outside
@@ -61,20 +61,21 @@ android {
         // needed here.
         minSdk 28
         targetSdk 35
-        // GeneralsX @feature Android port 08/07/2026 Version numbers are
-        // manually managed from here on -- CI no longer auto-bumps versionCode
-        // from the workflow run number on every push. Bump these two values
-        // by hand when you actually want to ship a new version; -PandroidVersionCode=N
-        // / -PandroidVersionName=X.Y.Z (wired from the "Build Android" workflow's
-        // manual-dispatch inputs) can still override them for one-off CI builds
-        // without touching this file. versionCode must strictly increase for
-        // Android to accept installing one APK "over" another via a normal tap
-        // install (adb install -r doesn't care) -- keep it above whatever is
-        // already on your device.
-        // Scheme: versionCode = major*10000 + minor*100 + patch, so the
-        // number always sorts the same way as versionName (1.2.0 -> 10200).
-        versionCode (project.hasProperty('androidVersionCode') ? (project.androidVersionCode as Integer) : 10400)
-        versionName (project.hasProperty('androidVersionName') ? project.androidVersionName : '1.4.0')
+        // GeneralsX @feature rebrand 15/09/2026 Versioning is tag-driven: the
+        // committed defaults are the fallback, but CI passes -PversionTag=vX.Y.Z
+        // (from the git tag that triggered the build) and the version is derived
+        // from it. versionCode keeps the sorting-friendly scheme
+        // major*10000 + minor*100 + patch so vX.Y.Z -> Y*100+Z (1.4.0 -> 10400);
+        // a tag that doesn't parse fails the build rather than shipping a
+        // silently wrong version. Local builds without a tag property use the
+        // defaults below.
+        versionCode (project.hasProperty('androidVersionCode') ? (project.androidVersionCode as Integer)
+            : (project.hasProperty('versionTag') ? tagVersionCode(project.versionTag)
+            : 10500))
+        versionName (project.hasProperty('androidVersionName') ? project.androidVersionName
+            : (project.hasProperty('versionTag') ? tagVersionName(project.versionTag)
+            : '1.5.0')
+            )
         ndk {
             abiFilters 'arm64-v8a'
         }
@@ -144,9 +145,33 @@ android {
     }
 }
 
+// GeneralsX @feature rebrand 15/09/2026 Tag-driven versioning. CI passes
+// -PversionTag=vX.Y.Z from the git tag that triggered the build; these helpers
+// turn it into versionCode/versionName. versionCode keeps the sorting-friendly
+// major*10000 + minor*100 + patch scheme (v1.4.0 -> 10400) so the number always
+// sorts like the name; a malformed tag fails configuration instead of shipping
+// a silently wrong version. androidVersionCode/androidVersionName overrides
+// still win when provided (one-off CI builds).
+def tagVersionName(String tag) {
+    def m = (tag =~ /^v?(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?$/)
+    if (!m.matches()) {
+        throw new GradleException("versionTag '${tag}' is not a valid v-prefixed SemVer tag (expected vX.Y[.Z][-suffix])")
+    }
+    def base = "${m.group(1)}.${m.group(2)}.${m.group(3) ?: '0'}"
+    return m.group(4) ? "${base}-${m.group(4)}" : base
+}
+
+def tagVersionCode(String tag) {
+    def m = (tag =~ /^v?(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?$/)
+    if (!m.matches()) {
+        throw new GradleException("versionTag '${tag}' is not a valid v-prefixed SemVer tag (expected vX.Y[.Z][-suffix])")
+    }
+    return ((m.group(1) as int) * 10000) + ((m.group(2) as int) * 100) + (m.group(3) ? (m.group(3) as int) : 0)
+}
+
 dependencies {
     // Material Components for the Setup/Settings/Log-viewer screens only —
-    // GeneralsZHActivity (the actual game surface) stays on its own plain
+    // GameActivity (the actual game surface) stays on its own plain
     // fullscreen theme and never touches these widgets.
     implementation 'com.google.android.material:material:1.12.0'
 

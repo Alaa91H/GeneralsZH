@@ -47,7 +47,7 @@
 // (<version>.moddb_meta) that survive across sessions so update checks need
 // no re-download to know what is installed.
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -213,11 +213,11 @@ final class ModsPanel extends LinearLayout {
         Activity activity = host.activity();
         LinearLayout page = this;
         if (withAppBar) {
-            setBackgroundColor(UiKit.color(activity, R.color.gzh_background));
+            setBackgroundColor(UiKit.color(activity, R.color.gen_background));
             InsetUtil.applySafeInsets(this);
             UiKit.appBar(this, activity.getString(R.string.mods_overline),
                 activity.getString(R.string.mods_window_title),
-                R.drawable.ic_gzh_refresh, activity.getString(R.string.mods_refresh),
+                R.drawable.ic_gen_refresh, activity.getString(R.string.mods_refresh),
                 this::onRefresh);
             page = UiKit.scrollingPage(this);
         }
@@ -286,7 +286,7 @@ final class ModsPanel extends LinearLayout {
         Activity activity = host.activity();
         if (gameFolder == null) {
             UiKit.supporting(listHost, activity.getString(R.string.mods_no_game_folder));
-            UiKit.button(listHost, UiKit.BTN_TONAL, R.drawable.ic_gzh_folder,
+            UiKit.button(listHost, UiKit.BTN_TONAL, R.drawable.ic_gen_folder,
                 activity.getString(R.string.setup_button_select_game_folder),
                 host::requestGameFolder);
             return;
@@ -311,14 +311,14 @@ final class ModsPanel extends LinearLayout {
         List<ModInstaller.ModGroup> groups = ModInstaller.listGroups(gameFolder, launchPath);
 
         LinearLayout launchCard = UiKit.card(listHost);
-        UiKit.sectionHeader(launchCard, R.drawable.ic_gzh_play,
+        UiKit.sectionHeader(launchCard, R.drawable.ic_gen_play,
             activity.getString(R.string.mods_card_launch), false);
         if (launchPath != null) {
             UiKit.supporting(launchCard, activity.getString(R.string.mods_launch_active,
                 new File(launchPath).getName()));
-            UiKit.button(launchCard, UiKit.BTN_PRIMARY, R.drawable.ic_gzh_play,
+            UiKit.button(launchCard, UiKit.BTN_PRIMARY, R.drawable.ic_gen_play,
                 activity.getString(R.string.mods_button_launch), this::onLaunchGame);
-            UiKit.button(launchCard, UiKit.BTN_DANGER, R.drawable.ic_gzh_broom,
+            UiKit.button(launchCard, UiKit.BTN_DANGER, R.drawable.ic_gen_broom,
                 activity.getString(R.string.mods_button_clear_launch), () -> {
                     clearLaunchCfg();
                     launchPath = null;
@@ -329,7 +329,7 @@ final class ModsPanel extends LinearLayout {
         }
 
         LinearLayout card = UiKit.card(listHost);
-        UiKit.sectionHeader(card, R.drawable.ic_gzh_chip,
+        UiKit.sectionHeader(card, R.drawable.ic_gen_chip,
             activity.getString(R.string.mods_card_installed, groups.size()), false);
 
         if (freed > 1024) {
@@ -343,7 +343,7 @@ final class ModsPanel extends LinearLayout {
 
         if (groups.isEmpty()) {
             UiKit.supporting(card, activity.getString(R.string.mods_none_installed));
-            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gzh_download,
+            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_download,
                 activity.getString(R.string.mods_tab_browse), () -> {
                     screen = SCREEN_BROWSE;
                     saveBrowsePrefs();
@@ -353,10 +353,10 @@ final class ModsPanel extends LinearLayout {
             for (ModInstaller.ModGroup group : groups) {
                 card.addView(buildGroupSection(group));
             }
-            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gzh_refresh,
+            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_refresh,
                 activity.getString(R.string.mods_check_updates), this::checkUpdatesManually);
         }
-        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gzh_folder,
+        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_folder,
             activity.getString(R.string.mods_install_from_files), this::onInstallFromStorage);
         UiKit.supporting(card, activity.getString(R.string.mods_installed_hint));
 
@@ -395,7 +395,7 @@ final class ModsPanel extends LinearLayout {
         TextView arrow = new TextView(activity);
         arrow.setText(expandedGroups.contains(group.modName) ? "\u25be" : "\u25b8");
         arrow.setTextSize(18f);
-        arrow.setTextColor(UiKit.color(activity, R.color.gzh_on_surface_faint));
+        arrow.setTextColor(UiKit.color(activity, R.color.gen_on_surface_faint));
         arrow.setPadding(0, 0, UiKit.dp(activity, 10f), 0);
         groupRow.addView(arrow);
 
@@ -408,7 +408,7 @@ final class ModsPanel extends LinearLayout {
         title.setText(group.modName);
         title.setTextSize(15f);
         title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        title.setTextColor(UiKit.color(activity, R.color.gzh_on_surface));
+        title.setTextColor(UiKit.color(activity, R.color.gen_on_surface));
         textCol.addView(title);
 
         StringBuilder meta = new StringBuilder();
@@ -420,7 +420,7 @@ final class ModsPanel extends LinearLayout {
         TextView metaView = new TextView(activity);
         metaView.setText(meta.toString());
         metaView.setTextSize(12f);
-        metaView.setTextColor(UiKit.color(activity, R.color.gzh_on_surface_variant));
+        metaView.setTextColor(UiKit.color(activity, R.color.gen_on_surface_variant));
         textCol.addView(metaView);
 
         Boolean update = updateByGroup.get(group.modName);
@@ -429,10 +429,10 @@ final class ModsPanel extends LinearLayout {
             badge.setText(R.string.mods_update_badge);
             badge.setTextSize(12f);
             badge.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-            badge.setTextColor(UiKit.color(activity, R.color.gzh_tertiary));
+            badge.setTextColor(UiKit.color(activity, R.color.gen_tertiary));
             badge.setPadding(UiKit.dp(activity, 8f), UiKit.dp(activity, 3f),
                 UiKit.dp(activity, 8f), UiKit.dp(activity, 3f));
-            GradientBg.applyTinted(badge, R.color.gzh_tertiary_container);
+            GradientBg.applyTinted(badge, R.color.gen_tertiary_container);
             groupRow.addView(badge);
         }
 
@@ -446,7 +446,7 @@ final class ModsPanel extends LinearLayout {
                 if (version.selected) {
                     supporting += " \u00b7 " + activity.getString(R.string.mods_installed_active_badge);
                 }
-                UiKit.listRow(versions, R.drawable.ic_gzh_chip, version.displayName, supporting,
+                UiKit.listRow(versions, R.drawable.ic_gen_chip, version.displayName, supporting,
                     () -> onVersionClicked(group, version));
             }
             section.addView(versions, new LinearLayout.LayoutParams(
@@ -764,7 +764,7 @@ final class ModsPanel extends LinearLayout {
     private void buildBrowseSearch() {
         Activity activity = host.activity();
         LinearLayout card = UiKit.card(listHost);
-        UiKit.sectionHeader(card, R.drawable.ic_gzh_globe,
+        UiKit.sectionHeader(card, R.drawable.ic_gen_globe,
             activity.getString(R.string.mods_card_browse), false);
         UiKit.supporting(card, activity.getString(R.string.mods_browse_hint));
 
@@ -793,7 +793,7 @@ final class ModsPanel extends LinearLayout {
         card.addView(searchRow, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gzh_refresh,
+        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_refresh,
             activity.getString(R.string.mods_show_all), () -> runBrowse(null));
 
         // Sort row: persists across sessions, applies to whatever is shown.
@@ -920,11 +920,11 @@ final class ModsPanel extends LinearLayout {
         Activity activity = host.activity();
         listHost.removeAllViews();
         LinearLayout card = UiKit.card(listHost);
-        UiKit.sectionHeader(card, R.drawable.ic_gzh_info,
+        UiKit.sectionHeader(card, R.drawable.ic_gen_info,
             activity.getString(R.string.mods_err_title), false);
         UiKit.supporting(card, message);
         if (offerRetry) {
-            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gzh_refresh,
+            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_refresh,
                 activity.getString(R.string.mods_retry), () -> runBrowse(lastQuery));
         }
     }
@@ -938,7 +938,7 @@ final class ModsPanel extends LinearLayout {
         Activity activity = host.activity();
         listHost.removeAllViews();
         LinearLayout card = UiKit.card(listHost);
-        UiKit.sectionHeader(card, R.drawable.ic_gzh_globe,
+        UiKit.sectionHeader(card, R.drawable.ic_gen_globe,
             activity.getString(R.string.mods_card_results, results.size()), false);
         if (results.isEmpty()) {
             UiKit.supporting(card, activity.getString(R.string.mods_no_results));
@@ -948,7 +948,7 @@ final class ModsPanel extends LinearLayout {
             card.addView(buildModCard(mod));
         }
         if (lastQuery == null && hasMorePages) {
-            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gzh_download,
+            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_download,
                 activity.getString(R.string.mods_page_next), this::loadMore);
         }
     }
@@ -973,9 +973,9 @@ final class ModsPanel extends LinearLayout {
         tlp.setMarginEnd(UiKit.dp(activity, 12f));
         row.addView(thumb, tlp);
         if (mod.imageUrl == null || mod.imageUrl.isEmpty()) {
-            thumb.setImageResource(R.drawable.ic_gzh_chip);
+            thumb.setImageResource(R.drawable.ic_gen_chip);
             thumb.setImageTintList(android.content.res.ColorStateList.valueOf(
-                UiKit.color(activity, R.color.gzh_primary)));
+                UiKit.color(activity, R.color.gen_primary)));
         } else {
             ThumbCache.load(mod.imageUrl, bitmap -> activity.runOnUiThread(() -> {
                 if (bitmap != null && !isFinishingSafe()) {
@@ -994,7 +994,7 @@ final class ModsPanel extends LinearLayout {
         title.setText(mod.name);
         title.setTextSize(15f);
         title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        title.setTextColor(UiKit.color(activity, R.color.gzh_on_surface));
+        title.setTextColor(UiKit.color(activity, R.color.gen_on_surface));
         textCol.addView(title);
 
         StringBuilder meta = new StringBuilder();
@@ -1011,7 +1011,7 @@ final class ModsPanel extends LinearLayout {
             TextView metaView = new TextView(activity);
             metaView.setText(meta.toString());
             metaView.setTextSize(12f);
-            metaView.setTextColor(UiKit.color(activity, R.color.gzh_primary));
+            metaView.setTextColor(UiKit.color(activity, R.color.gen_primary));
             textCol.addView(metaView);
         }
 
@@ -1022,7 +1022,7 @@ final class ModsPanel extends LinearLayout {
         blurbView.setTextSize(13f);
         blurbView.setMaxLines(2);
         blurbView.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        blurbView.setTextColor(UiKit.color(activity, R.color.gzh_on_surface_variant));
+        blurbView.setTextColor(UiKit.color(activity, R.color.gen_on_surface_variant));
         textCol.addView(blurbView);
 
         return row;
@@ -1041,14 +1041,14 @@ final class ModsPanel extends LinearLayout {
     private void buildDetail() {
         Activity activity = host.activity();
         LinearLayout card = UiKit.card(listHost);
-        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gzh_chevron,
+        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_chevron,
             activity.getString(R.string.mods_back_to_browse), () -> {
                 screen = SCREEN_BROWSE;
                 rebuild();
             });
 
         if (detailData == null) {
-            UiKit.sectionHeader(card, R.drawable.ic_gzh_chip, detailMod.name, false);
+            UiKit.sectionHeader(card, R.drawable.ic_gen_chip, detailMod.name, false);
             UiKit.supporting(card, activity.getString(R.string.mods_loading));
             final ModDbClient.ModSummary summary = detailMod;
             new Thread(() -> {
@@ -1078,12 +1078,12 @@ final class ModsPanel extends LinearLayout {
         int chipPad = UiKit.dp(activity, 4f);
         chips.setPadding(chipPad, 0, chipPad, 0);
         if (detailData.rating != null && !detailData.rating.isEmpty()) {
-            UiKit.chip(chips, R.drawable.ic_gzh_check, "\u2605 " + detailData.rating,
-                R.color.gzh_primary, R.color.gzh_surface_container_high);
+            UiKit.chip(chips, R.drawable.ic_gen_check, "\u2605 " + detailData.rating,
+                R.color.gen_primary, R.color.gen_surface_container_high);
         }
         if (detailData.downloads != null && !detailData.downloads.isEmpty()) {
-            UiKit.chip(chips, R.drawable.ic_gzh_download, detailData.downloads,
-                R.color.gzh_on_surface_variant, R.color.gzh_surface_container_high);
+            UiKit.chip(chips, R.drawable.ic_gen_download, detailData.downloads,
+                R.color.gen_on_surface_variant, R.color.gen_surface_container_high);
         }
         if (chips.getChildCount() > 0) {
             listHost.addView(chips, new LinearLayout.LayoutParams(
@@ -1107,7 +1107,7 @@ final class ModsPanel extends LinearLayout {
         // Screenshots strip: horizontally scrolling gallery, GenLauncher-style.
         if (!detailData.screenshots.isEmpty()) {
             LinearLayout shotsCard = UiKit.card(listHost);
-            UiKit.sectionHeader(shotsCard, R.drawable.ic_gzh_display,
+            UiKit.sectionHeader(shotsCard, R.drawable.ic_gen_display,
                 activity.getString(R.string.mods_screenshots), false);
             HorizontalScrollView scroller = new HorizontalScrollView(activity);
             scroller.setHorizontalScrollBarEnabled(false);
@@ -1136,11 +1136,11 @@ final class ModsPanel extends LinearLayout {
         }
 
         LinearLayout body = UiKit.card(listHost);
-        UiKit.sectionHeader(body, R.drawable.ic_gzh_chip, detailData.name, false);
+        UiKit.sectionHeader(body, R.drawable.ic_gen_chip, detailData.name, false);
         String desc = (detailData.description != null && !detailData.description.isEmpty())
             ? detailData.description : activity.getString(R.string.mods_no_description);
         UiKit.supporting(body, desc);
-        UiKit.button(body, UiKit.BTN_PRIMARY, R.drawable.ic_gzh_download,
+        UiKit.button(body, UiKit.BTN_PRIMARY, R.drawable.ic_gen_download,
             activity.getString(R.string.mods_open_details), this::openModFiles);
     }
 
@@ -1164,12 +1164,12 @@ final class ModsPanel extends LinearLayout {
         Activity activity = host.activity();
         if (detailFiles == null) {
             LinearLayout card = UiKit.card(listHost);
-            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gzh_chevron,
+            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_chevron,
                 activity.getString(R.string.mods_back_to_browse), () -> {
                     screen = SCREEN_DETAIL;
                     rebuild();
                 });
-            UiKit.sectionHeader(card, R.drawable.ic_gzh_chip, detailMod.name, false);
+            UiKit.sectionHeader(card, R.drawable.ic_gen_chip, detailMod.name, false);
             UiKit.supporting(card, activity.getString(R.string.mods_loading));
             final ModDbClient.ModSummary summary = detailMod;
             new Thread(() -> {
@@ -1199,12 +1199,12 @@ final class ModsPanel extends LinearLayout {
 
         listHost.removeAllViews();
         LinearLayout card = UiKit.card(listHost);
-        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gzh_chevron,
+        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_chevron,
             activity.getString(R.string.mods_back_to_browse), () -> {
                 screen = SCREEN_DETAIL;
                 rebuild();
             });
-        UiKit.sectionHeader(card, R.drawable.ic_gzh_download, detailMod.name, false);
+        UiKit.sectionHeader(card, R.drawable.ic_gen_download, detailMod.name, false);
         UiKit.supporting(card, activity.getString(R.string.mods_files_count, detailFiles.size()));
         UiKit.supporting(card, activity.getString(R.string.mods_files_hint));
 
@@ -1229,7 +1229,7 @@ final class ModsPanel extends LinearLayout {
                 }
                 supporting.append(file.sizeBytes);
             }
-            UiKit.listRow(card, R.drawable.ic_gzh_download, file.name,
+            UiKit.listRow(card, R.drawable.ic_gen_download, file.name,
                 supporting.length() > 0 ? supporting.toString()
                                         : activity.getString(R.string.mods_no_description),
                 () -> confirmDownload(detailMod, file));
@@ -1295,7 +1295,7 @@ final class ModsPanel extends LinearLayout {
         clearPageReferences();
         listHost.removeAllViews();
         LinearLayout card = UiKit.card(listHost);
-        UiKit.sectionHeader(card, R.drawable.ic_gzh_download,
+        UiKit.sectionHeader(card, R.drawable.ic_gen_download,
             activity.getString(R.string.mods_installing, base), false);
         installPhaseView = UiKit.supporting(card,
             activity.getString(R.string.mods_phase_starting));
@@ -1475,8 +1475,8 @@ final class ModsPanel extends LinearLayout {
             android.graphics.drawable.GradientDrawable bg =
                 new android.graphics.drawable.GradientDrawable();
             bg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-            bg.setCornerRadius(UiKit.dim(view.getContext(), R.dimen.gzh_radius_row));
-            bg.setColor(UiKit.color(view.getContext(), R.color.gzh_surface_container_high));
+            bg.setCornerRadius(UiKit.dim(view.getContext(), R.dimen.gen_radius_row));
+            bg.setColor(UiKit.color(view.getContext(), R.color.gen_surface_container_high));
             view.setBackground(bg);
         }
 

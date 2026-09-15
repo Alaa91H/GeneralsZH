@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Generals Zero Hour</string>
+    <string name="app_name">Generals</string>
     <string name="common_cancel">取消</string>
 
     <!-- SetupActivity: title / fallback -->
-    <string name="setup_window_title">GeneralsZH 设置</string>
+    <string name="setup_window_title">Generals 设置</string>
     <string name="setup_title">Command &amp; Conquer Generals: Zero Hour</string>
     <string name="setup_subtitle">Android 设置</string>
     <string name="setup_fallback_warning">正常的设置界面加载失败（%1$s）。已显示简化版界面，方便你仍能访问日志或游戏文件夹。</string>
@@ -162,7 +162,7 @@
     <string name="logviewer_dialog_clear_confirm">清除</string>
     <string name="logviewer_dialog_clear_cancel">取消</string>
     <string name="logviewer_toast_cleared">日志已清除。</string>
-    <string name="logviewer_share_subject">GeneralsZH Android 日志</string>
+    <string name="logviewer_share_subject">Generals Android 日志</string>
     <string name="logviewer_share_chooser_title">分享日志</string>
     <string name="logviewer_toast_share_failed">无法准备要分享的日志文件：%1$s</string>
     <string name="logviewer_read_failed">（无法读取 %1$s：%2$s）</string>
@@ -175,7 +175,7 @@
     <string name="online_signin_help">点击"登录"。第一次点击时可能会要求将此应用从电池优化中排除——请允许该请求，然后返回并再次点击"登录"。之后会打开一个浏览器，跳转到 playgenerals.online，并已附带此设备的一次性代码。在网页上选择 Steam、Discord 或 GameReplays，然后返回本应用即可；登录过程会自动完成。</string>
     <string name="online_button_sign_in">登录</string>
     <string name="online_status_signing_in">正在登录……</string>
-    <string name="online_status_battery_opt">请在下一个界面中允许 GeneralsZH 在后台运行，然后返回并再次点击"登录"——否则 Android 可能会在你使用浏览器期间中止登录检查。</string>
+    <string name="online_status_battery_opt">请在下一个界面中允许 Generals 在后台运行，然后返回并再次点击"登录"——否则 Android 可能会在你使用浏览器期间中止登录检查。</string>
     <string name="online_toast_no_browser">没有可用的浏览器：%1$s</string>
     <string name="online_status_continue_browser">请在浏览器中继续操作——登录完成后返回此处。</string>
     <string name="online_status_network_error">网络错误——请检查连接后重试。</string>

@@ -33,7 +33,7 @@
 // directly and installs over the existing app because every build signs
 // with the same fixed in-repo key (see build.gradle's signingConfigs note).
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.app.Activity;
 import android.app.DownloadManager;

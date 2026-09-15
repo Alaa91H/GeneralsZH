@@ -39,7 +39,7 @@
 // backs off (30s) instead of hammering. The app's own fetch pattern is
 // human-paced to begin with; this just removes the accidental burst paths.
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import java.io.BufferedReader;
 import java.io.IOException;

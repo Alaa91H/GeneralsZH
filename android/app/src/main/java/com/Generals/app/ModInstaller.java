@@ -43,7 +43,7 @@
 // is checked before downloading, and stale .part/.dl scratch files from
 // crashed sessions are swept on the Mods screen's startup.
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import com.github.junrar.Archive;
 import com.github.junrar.rarfile.FileHeader;

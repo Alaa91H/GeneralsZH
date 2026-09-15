@@ -29,7 +29,7 @@
 //     libmain.so is never dlopen'd on a misconfigured install, so a missing
 //     game data folder can never look like (or mask) a native crash.
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.content.Intent;
 import android.content.res.AssetManager;
@@ -47,9 +47,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-public class GeneralsZHActivity extends SDLActivity {
+public class GameActivity extends SDLActivity {
 
-    private static final String TAG = "GeneralsZH";
+    private static final String TAG = "Generals";
 
     @Override
     protected String[] getLibraries() {
@@ -115,7 +115,7 @@ public class GeneralsZHActivity extends SDLActivity {
         // every launch, in the background, before the player can reach the
         // Online button; on failure the old marker stays (nothing regresses
         // offline).
-        GeneralsOnlineSession.refreshSessionAsync(this);
+        OnlineSession.refreshSessionAsync(this);
 
         // GeneralsX @bugfix Android port 07/07/2026 Apply the fonts/dxvk.conf/
         // DefaultOptions.ini copy-if-missing fix retroactively on every launch,

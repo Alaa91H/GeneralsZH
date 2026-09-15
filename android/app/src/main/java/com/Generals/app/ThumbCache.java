@@ -32,7 +32,7 @@
 // parked in a small negative-cache so a flaky network doesn't re-request
 // per frame.
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;

@@ -26,7 +26,7 @@
 // were both unreachable). Pads the given root view by the system bar +
 // cutout insets on all sides so nothing important is ever drawn under them.
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.view.View;
 

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Generals Zero Hour</string>
+    <string name="app_name">Generals</string>
     <string name="common_cancel">لغو</string>
 
     <!-- SetupActivity: title / fallback -->
-    <string name="setup_window_title">تنظیمات GeneralsZH</string>
+    <string name="setup_window_title">تنظیمات Generals</string>
     <string name="setup_title">Command &amp; Conquer Generals: Zero Hour</string>
     <string name="setup_subtitle">تنظیمات اندروید</string>
     <string name="setup_fallback_warning">رابط تنظیمات معمولی بارگذاری نشد (%1$s). یک رابط ساده جایگزین نمایش داده می‌شود تا همچنان بتوانید به گزارش‌ها/پوشه بازی دسترسی داشته باشید.</string>
@@ -162,7 +162,7 @@
     <string name="logviewer_dialog_clear_confirm">پاک کردن</string>
     <string name="logviewer_dialog_clear_cancel">لغو</string>
     <string name="logviewer_toast_cleared">گزارش‌ها پاک شدند.</string>
-    <string name="logviewer_share_subject">گزارش GeneralsZH Android</string>
+    <string name="logviewer_share_subject">گزارش Generals Android</string>
     <string name="logviewer_share_chooser_title">اشتراک‌گذاری گزارش</string>
     <string name="logviewer_toast_share_failed">آماده‌سازی فایل گزارش برای اشتراک‌گذاری ممکن نشد: %1$s</string>
     <string name="logviewer_read_failed">(خواندن %1$s ممکن نشد: %2$s)</string>
@@ -175,7 +175,7 @@
     <string name="online_signin_help">روی «ورود» ضربه بزنید. ممکن است در اولین ضربه از شما خواسته شود این برنامه را از بهینه‌سازی باتری مستثنی کنید — آن را اجازه دهید، سپس بازگردید و دوباره روی «ورود» ضربه بزنید. سپس مرورگری باز می‌شود که به playgenerals.online می‌رود و از قبل حاوی یک کد یک‌بارمصرف برای این دستگاه است. در آنجا Steam، Discord یا GameReplays را انتخاب کنید و سپس فقط به این برنامه بازگردید؛ فرآیند به‌طور خودکار کامل می‌شود.</string>
     <string name="online_button_sign_in">ورود</string>
     <string name="online_status_signing_in">در حال ورود...</string>
-    <string name="online_status_battery_opt">در صفحه بعدی اجازه دهید GeneralsZH در پس‌زمینه اجرا شود، سپس بازگردید و دوباره روی «ورود» ضربه بزنید — در غیر این صورت ممکن است اندروید بررسی ورود را در حالی که در مرورگر هستید متوقف کند.</string>
+    <string name="online_status_battery_opt">در صفحه بعدی اجازه دهید Generals در پس‌زمینه اجرا شود، سپس بازگردید و دوباره روی «ورود» ضربه بزنید — در غیر این صورت ممکن است اندروید بررسی ورود را در حالی که در مرورگر هستید متوقف کند.</string>
     <string name="online_toast_no_browser">هیچ مرورگری در دسترس نیست: %1$s</string>
     <string name="online_status_continue_browser">در مرورگر خود ادامه دهید — پس از ورود به اینجا بازگردید.</string>
     <string name="online_status_network_error">خطای شبکه — اتصال خود را بررسی کرده و دوباره تلاش کنید.</string>

@@ -28,7 +28,7 @@
 // into wherever the user actually put their files — Downloads, an SD card,
 // wherever a normal file manager or USB cable already reaches.
 
-package com.generalsx.zerohour;
+package com.Generals.app;
 
 import android.app.Activity;
 import android.os.Bundle;
@@ -79,45 +79,45 @@ public class FolderPickerActivity extends Activity {
         // M3 actions at the bottom where a thumb reaches them.
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(UiKit.color(this, R.color.gzh_background));
+        root.setBackgroundColor(UiKit.color(this, R.color.gen_background));
 
         UiKit.appBar(root, getString(R.string.setup_window_title),
             getString(R.string.folderpicker_title), 0, null, null);
 
-        int gutter = UiKit.dim(this, R.dimen.gzh_gutter);
+        int gutter = UiKit.dim(this, R.dimen.gen_gutter);
 
         pathLabel = new TextView(this);
         pathLabel.setPadding(gutter, 0, gutter, UiKit.dp(this, 2));
         pathLabel.setTextIsSelectable(true);
         pathLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
-            UiKit.dim(this, R.dimen.gzh_text_body));
-        pathLabel.setTextColor(UiKit.color(this, R.color.gzh_on_surface));
+            UiKit.dim(this, R.dimen.gen_text_body));
+        pathLabel.setTextColor(UiKit.color(this, R.color.gen_on_surface));
         root.addView(pathLabel);
 
         hintLabel = new TextView(this);
-        hintLabel.setPadding(gutter, 0, gutter, UiKit.dim(this, R.dimen.gzh_item_gap_tight));
+        hintLabel.setPadding(gutter, 0, gutter, UiKit.dim(this, R.dimen.gen_item_gap_tight));
         hintLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
-            UiKit.dim(this, R.dimen.gzh_text_caption));
-        hintLabel.setTextColor(UiKit.color(this, R.color.gzh_on_surface_variant));
+            UiKit.dim(this, R.dimen.gen_text_caption));
+        hintLabel.setTextColor(UiKit.color(this, R.color.gen_on_surface_variant));
         root.addView(hintLabel);
 
         listView = new ListView(this);
         listView.setDivider(new android.graphics.drawable.ColorDrawable(
-            UiKit.color(this, R.color.gzh_outline_variant)));
+            UiKit.color(this, R.color.gen_outline_variant)));
         listView.setDividerHeight(Math.max(1, UiKit.dp(this, 1)));
-        listView.setPadding(UiKit.dim(this, R.dimen.gzh_item_gap_tight), 0,
-            UiKit.dim(this, R.dimen.gzh_item_gap_tight), 0);
+        listView.setPadding(UiKit.dim(this, R.dimen.gen_item_gap_tight), 0,
+            UiKit.dim(this, R.dimen.gen_item_gap_tight), 0);
         listView.setClipToPadding(false);
         listView.setSelector(new android.graphics.drawable.ColorDrawable(
-            UiKit.color(this, R.color.gzh_ripple_light)));
+            UiKit.color(this, R.color.gen_ripple_light)));
         LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
         root.addView(listView, listParams);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.VERTICAL);
-        actions.setPadding(gutter, UiKit.dim(this, R.dimen.gzh_item_gap_tight),
-            gutter, UiKit.dim(this, R.dimen.gzh_item_gap_tight));
+        actions.setPadding(gutter, UiKit.dim(this, R.dimen.gen_item_gap_tight),
+            gutter, UiKit.dim(this, R.dimen.gen_item_gap_tight));
         root.addView(actions, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -125,7 +125,7 @@ public class FolderPickerActivity extends Activity {
         UiKit.share(UiKit.button(buttonRow, UiKit.BTN_OUTLINE, 0,
             getString(R.string.common_cancel),
             () -> { setResult(RESULT_CANCELED); finish(); }), true);
-        UiKit.share(UiKit.button(buttonRow, UiKit.BTN_PRIMARY, R.drawable.ic_gzh_check,
+        UiKit.share(UiKit.button(buttonRow, UiKit.BTN_PRIMARY, R.drawable.ic_gen_check,
             getString(R.string.folderpicker_button_use), this::finishWithSelection), false);
 
         setContentView(root);
@@ -185,19 +185,19 @@ public class FolderPickerActivity extends Activity {
             @Override
             public View getView(int position, View convertView, ViewGroup parent) {
                 TextView row = (TextView) super.getView(position, convertView, parent);
-                row.setTextColor(UiKit.color(FolderPickerActivity.this, R.color.gzh_on_surface));
+                row.setTextColor(UiKit.color(FolderPickerActivity.this, R.color.gen_on_surface));
                 row.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
-                    UiKit.dim(FolderPickerActivity.this, R.dimen.gzh_text_body));
-                int padH = UiKit.dim(FolderPickerActivity.this, R.dimen.gzh_item_gap);
+                    UiKit.dim(FolderPickerActivity.this, R.dimen.gen_text_body));
+                int padH = UiKit.dim(FolderPickerActivity.this, R.dimen.gen_item_gap);
                 int padV = UiKit.dp(FolderPickerActivity.this, 14);
                 row.setPadding(padH, padV, padH, padV);
                 row.setCompoundDrawablePadding(padH);
                 android.graphics.drawable.Drawable icon = ContextCompat.getDrawable(
-                    FolderPickerActivity.this, R.drawable.ic_gzh_folder);
+                    FolderPickerActivity.this, R.drawable.ic_gen_folder);
                 if (icon != null) {
-                    int s = UiKit.dim(FolderPickerActivity.this, R.dimen.gzh_icon);
+                    int s = UiKit.dim(FolderPickerActivity.this, R.dimen.gen_icon);
                     icon.setBounds(0, 0, s, s);
-                    icon.setTint(UiKit.color(FolderPickerActivity.this, R.color.gzh_primary));
+                    icon.setTint(UiKit.color(FolderPickerActivity.this, R.color.gen_primary));
                     row.setCompoundDrawablesRelative(icon, null, null, null);
                 }
                 return row;
