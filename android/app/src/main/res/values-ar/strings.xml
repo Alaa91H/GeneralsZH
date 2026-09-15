@@ -6,6 +6,7 @@
     <!-- SetupActivity: title / fallback -->
     <string name="setup_window_title">إعدادات Generals</string>
     <string name="setup_title">Command &amp; Conquer Generals: Zero Hour</string>
+    <string name="nav_tab_settings">الإعدادات</string>
     <string name="setup_subtitle">إعدادات أندرويد</string>
     <string name="setup_fallback_warning">فشل تحميل واجهة الإعدادات العادية (%1$s). يتم عرض واجهة بديلة بسيطة حتى تتمكن من الوصول إلى السجلات/مجلد اللعبة.</string>
 

@@ -290,12 +290,21 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     // and status line that existed before still exists, and every string
     // resource is still used. See showTab() for where each one landed.
     private static final String STATE_TAB = "gen_tab";
+    // GeneralsX @feature Android port launcher-ui 16/09/2026 Two bottom
+    // destinations only: Home (launch + game folder + GeneralsOnline + the
+    // graphics sections merged in) and Mods. Everything configurational
+    // (interface, tools, logs, help) lives on a single Settings page reached
+    // from the gear icon in the top bar (replacing the logs shortcut, which
+    // moved into Settings) -- the launcher's own hierarchy, not a flat
+    // six-tab rail. TAB_GRAPHICS/TAB_INTERFACE/TAB_TOOLS/TAB_HELP remain as
+    // page identities inside Home/Settings; showTab() maps them.
     private static final int TAB_HOME = 1;
     private static final int TAB_GRAPHICS = 2;
     private static final int TAB_INTERFACE = 3;
     private static final int TAB_TOOLS = 4;
     private static final int TAB_MODS = 5;
     private static final int TAB_HELP = 6;
+    private static final int TAB_SETTINGS = 7;
     // GeneralsX @feature Android port launcher-ui 15/09/2026 Mods is a
     // bottom page again. BottomNavigationView hard-caps at five items (the
     // sixth threw IllegalArgumentException and broke the whole settings UI),
@@ -324,7 +333,7 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
         appBarTitle = UiKit.appBar(shell, getString(R.string.setup_title),
             getString(R.string.nav_tab_home),
-            R.drawable.ic_gen_doc, getString(R.string.setup_button_view_logs), this::onViewLogs);
+            R.drawable.ic_gen_settings, getString(R.string.nav_tab_settings), this::onOpenSettings);
 
         contentHost = new FrameLayout(this);
         shell.addView(contentHost, new LinearLayout.LayoutParams(
@@ -354,13 +363,10 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         int vPad = UiKit.dp(this, 8);
         rail.setPadding(0, vPad, 0, vPad);
 
+        // Two destinations: everything configurational is behind the gear.
         int[][] items = {
-            {TAB_HOME,     R.string.nav_tab_home,     R.drawable.ic_gen_home},
-            {TAB_GRAPHICS, R.string.nav_tab_graphics, R.drawable.ic_gen_display},
-            {TAB_INTERFACE,R.string.nav_tab_interface,R.drawable.ic_gen_globe},
-            {TAB_TOOLS,    R.string.nav_tab_tools,    R.drawable.ic_gen_wrench},
-            {TAB_MODS,     R.string.nav_tab_mods,     R.drawable.ic_gen_chip},
-            {TAB_HELP,     R.string.nav_tab_help,     R.drawable.ic_gen_info},
+            {TAB_HOME, R.string.nav_tab_home, R.drawable.ic_gen_home},
+            {TAB_MODS, R.string.nav_tab_mods, R.drawable.ic_gen_chip},
         };
         for (int[] it : items) {
             rail.addView(buildNavItem(it[0], it[1], it[2]),
@@ -445,9 +451,16 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
             case TAB_GRAPHICS:  return R.string.nav_tab_graphics;
             case TAB_INTERFACE: return R.string.nav_tab_interface;
             case TAB_TOOLS:     return R.string.nav_tab_tools;
+            case TAB_MODS:      return R.string.nav_tab_mods;
             case TAB_HELP:      return R.string.nav_tab_help;
+            case TAB_SETTINGS:  return R.string.nav_tab_settings;
             default:            return R.string.nav_tab_home;
         }
+    }
+
+    /** Opens the combined settings page from the top-bar gear. */
+    private void onOpenSettings() {
+        showTab(TAB_SETTINGS);
     }
 
     /**
@@ -479,29 +492,6 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         // settings page; every other tab builds into one.
         LinearLayout page = tab == TAB_MODS ? null : UiKit.scrollingPage(contentHost);
         switch (tab) {
-            case TAB_GRAPHICS:
-                buildRenderBackendSection(page);
-                // Custom Vulkan driver / dxvk.conf only matter when Vulkan is
-                // the selected backend -- the GLES/GLES+ANGLE paths never
-                // touch DXVK at all, see
-                // Core/Libraries/Source/d3d8gles/CMakeLists.txt.
-                if (RENDER_BACKEND_VULKAN.equals(getRenderBackendChoice())) {
-                    applyRecommendedDriverIfNeeded();
-                    buildCustomDriverSection(page);
-                    buildDxvkConfigSection(page);
-                }
-                // GeneralsX @feature Android port launcher-options 15/09/2026
-                // Fixed-resolution override + advanced launch arguments.
-                buildLaunchOptionsSection(page);
-                break;
-            case TAB_INTERFACE:
-                buildLanguageSection(page);
-                buildUiScaleSection(page);
-                break;
-            case TAB_TOOLS:
-                buildLogsSection(page);
-                buildDiagnosticsSection(page);
-                break;
             case TAB_MODS:
                 // Embedded panel (no app bar of its own — the shell's title
                 // row already names the tab); re-created per visit so its
@@ -515,12 +505,42 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.MATCH_PARENT));
                 break;
-            case TAB_HELP:
+            case TAB_SETTINGS:
+                // GeneralsX @feature Android port launcher-ui 16/09/2026 The
+                // gear page: everything configurational in one scroll,
+                // grouped graphics -> interface -> tools/logs -> help. The
+                // former flat tabs remain reachable as in-page sections.
+                buildRenderBackendSection(page);
+                // Custom Vulkan driver / dxvk.conf only matter when Vulkan is
+                // the selected backend -- the GLES/GLES+ANGLE paths never
+                // touch DXVK at all, see
+                // Core/Libraries/Source/d3d8gles/CMakeLists.txt.
+                if (RENDER_BACKEND_VULKAN.equals(getRenderBackendChoice())) {
+                    applyRecommendedDriverIfNeeded();
+                    buildCustomDriverSection(page);
+                    buildDxvkConfigSection(page);
+                }
+                // GeneralsX @feature Android port launcher-options 15/09/2026
+                // Fixed-resolution override + advanced launch arguments.
+                buildLaunchOptionsSection(page);
+                buildLanguageSection(page);
+                buildUiScaleSection(page);
+                buildLogsSection(page);
+                buildDiagnosticsSection(page);
                 buildHelpSection(page);
                 break;
             case TAB_HOME:
             default:
+                // Graphics merged into Home (16/09/2026): the render backend,
+                // driver and launch options sit below the primary cards.
                 buildHomeSection(page);
+                buildRenderBackendSection(page);
+                if (RENDER_BACKEND_VULKAN.equals(getRenderBackendChoice())) {
+                    applyRecommendedDriverIfNeeded();
+                    buildCustomDriverSection(page);
+                    buildDxvkConfigSection(page);
+                }
+                buildLaunchOptionsSection(page);
                 break;
         }
 

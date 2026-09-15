@@ -33,12 +33,19 @@ and the project versions per [Semantic Versioning](https://semver.org/):
 
 ### Changed
 
-- **Mods is a bottom page again** — the full mod manager is embedded
-  inline as the sixth tab (`Home · Graphics · Interface · Tools ·
-  Mods · Help`), with Back wired through the panel's own navigation
-  (files → detail → browse → installed), storage-import results
-  forwarded, and the Installed list re-verified on every resume. The
-  standalone Mods activity remains for the Tools entry.
+- **Two-destination navigation with a Settings page** — the bottom bar
+  is now just **Home** and **Mods**. Graphics (render backend, driver,
+  dxvk.conf, launch options) merged into Home below the primary cards;
+  everything configurational — interface (language, UI scale), tools,
+  logs, diagnostics, help and the app-update check — lives on one
+  **Settings** page opened from a gear icon in the top bar (replacing
+  the logs shortcut, which moved into Settings). The former flat tabs
+  remain as in-page sections; nothing was dropped.
+- **Mods is a bottom page** — the full mod manager is embedded
+  inline as the second tab, with Back wired through the panel's own
+  navigation (files → detail → browse → installed), storage-import
+  results forwarded, and the Installed list re-verified on every
+  resume. The standalone Mods activity remains for deep links.
 
 ### Fixed
 
