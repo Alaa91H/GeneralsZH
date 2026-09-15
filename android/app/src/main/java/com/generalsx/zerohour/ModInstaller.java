@@ -115,8 +115,16 @@ final class ModInstaller {
      * GenLauncher's most-complained-about issue is storage never reclaimed;
      * this runs on every Mods-screen open so a crash never costs the user
      * gigabytes of invisible junk.
+     *
+     * keepPartialBase exempts the live install's own partial: the .part.dl
+     * IS the resume asset — deleting it turns every retry into a full
+     * re-download, so the sweep skips exactly the file a pending retry
+     * would resume from (matched on the download temp's "<base>.part.dl"
+     * name) while still reclaiming genuine orphans.
      */
-    static void cleanupTempFiles(String gameFolder) {
+    static void cleanupTempFiles(String gameFolder, String keepPartialBase) {
+        String keepName = (keepPartialBase == null || keepPartialBase.isEmpty())
+            ? null : keepPartialBase.toLowerCase(Locale.US) + ".part.dl";
         File root = modsRoot(gameFolder);
         File[] entries = root.listFiles();
         if (entries == null) {
@@ -133,6 +141,9 @@ final class ModInstaller {
             for (File child : children) {
                 String name = child.getName().toLowerCase(Locale.US);
                 if (child.isFile() && name.endsWith(".part.dl")) {
+                    if (name.equals(keepName)) {
+                        continue; // the live download's resume asset
+                    }
                     child.delete();
                 } else if (child.isDirectory() && name.startsWith(".")
                            && name.endsWith(".extracted")) {

@@ -461,8 +461,13 @@ final class ModDbClient {
         Pattern.compile("src=\"(https://[^\"]*(?:imagehost|moddb)\\.com/[^\"]*(?:imagethumb|thumb)[^\"]*\\.(?:jpg|png|jpeg))\"");
     private static final Pattern ROW_RATING =
         Pattern.compile("class=\"rating\"[^>]*>\\s*([0-9.]+)");
+    // GeneralsX @bugfix 15/09/2026 Anchored to the row's own stats span:
+    // the unanchored "N downloads" pattern could match any sentence in the
+    // row (e.g. a blurb "over 100,000 downloads"), mislabeling cards.
+    // ModDB wraps each row stat as <span class="...">N downloads</span>, so
+    // requiring the tag before the number keeps it to the real counter.
     private static final Pattern ROW_DOWNLOADS =
-        Pattern.compile("([0-9,.]+)\\s*downloads");
+        Pattern.compile("<span[^>]*>\\s*([0-9][0-9,.]*)\\s*downloads</span>");
     // GeneralsX @feature 15/09/2026 Profile-page description + hero image.
     private static final Pattern PROFILE_INTRO =
         Pattern.compile("id=\"introwrap\"");

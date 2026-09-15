@@ -241,9 +241,11 @@ public class ModManagerActivity extends Activity {
 
         // GeneralsX @bugfix 15/09/2026 sweep first: a killed session can leave
         // multi-GB .part.dl/extracted scratch behind — invisible junk the
-        // user can't reach with a file manager (app-private dirs).
+        // user can't reach with a file manager (app-private dirs). A live
+        // download's own partial is exempt (passed through to the sweep),
+        // so a failed install can still resume after a detour here.
         final long sweptBefore = ModInstaller.freeBytes(gameFolder);
-        ModInstaller.cleanupTempFiles(gameFolder);
+        ModInstaller.cleanupTempFiles(gameFolder, installBase);
         final long freed = ModInstaller.freeBytes(gameFolder) - sweptBefore;
 
         if (launchPath != null && !new File(launchPath).isDirectory()) {
@@ -376,15 +378,19 @@ public class ModManagerActivity extends Activity {
      * download used to crash the engine mid-INI-load; now the user sees what
      * is wrong and can still override — their device, their call.
      */
+    private void cleanupTempFilesPreservingResume() {
+        if (gameFolder != null) {
+            ModInstaller.cleanupTempFiles(gameFolder, installBase);
+        }
+    }
+
     private void onLaunchGame() {
         if (launchPath == null) {
             startActivity(new Intent(this, GeneralsZHActivity.class));
             finish();
             return;
         }
-        if (gameFolder != null) {
-            ModInstaller.cleanupTempFiles(gameFolder);
-        }
+        cleanupTempFilesPreservingResume();
         final String problem = ModInstaller.validateMod(launchPath);
         if (problem.isEmpty()) {
             launchNow();
@@ -1129,7 +1135,10 @@ public class ModManagerActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        // Detail -> Browse -> (tab root); Installed is the back root.
+        // Detail -> Browse -> tab root; Installed is the back root. Leaving
+        // the results list via Back forgets the list but NOT the search term
+        // (that only happens via the text box), and the cleared tab must not
+        // auto-refetch — Back from results means "leave", not "reload".
         if (screen == SCREEN_FILES) {
             screen = SCREEN_DETAIL;
             rebuild();
@@ -1142,7 +1151,11 @@ public class ModManagerActivity extends Activity {
         }
         if (screen == SCREEN_BROWSE && !results.isEmpty()) {
             results = new ArrayList<>();
-            screen = SCREEN_BROWSE;
+            hasMorePages = false;
+            browsePage = 1;
+            lastQuery = null;
+            screen = SCREEN_INSTALLED;
+            saveBrowsePrefs();
             rebuild();
             return;
         }
