@@ -262,6 +262,10 @@
     <string name="mods_install_done">تم تثبيت %1$s. اضغط عليه من "المثبتة" لتشغيله.</string>
     <string name="mods_err_title">حدث خطأ</string>
     <string name="mods_err_fetch">تعذّر الوصول إلى ModDB: %1$s</string>
+    <string name="challenge_title">تحقق لمرة واحدة من الموقع</string>
+    <string name="challenge_body">ModDB يحجب الوصول الآلي من هذه الشبكة. حلّ التحقق أدناه مرة واحدة (كما في المتصفح)؛ بعد ذلك يتصفح التطبيق تلقائياً.</string>
+    <string name="challenge_done">تم التحقق — جارٍ إعادة المحاولة…</string>
+    <string name="challenge_hint">إن لم يحدث شيء، اضغط إعادة التحميل.</string>
     <string name="mods_err_install">فشل التثبيت: %1$s</string>
     <string name="mods_err_write_cfg">تعذّر حفظ التحديد: %1$s</string>
 

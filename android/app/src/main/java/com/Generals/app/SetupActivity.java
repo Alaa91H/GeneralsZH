@@ -50,7 +50,6 @@ import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
 import android.view.ContextThemeWrapper;
 import android.view.Gravity;
-import android.view.Menu;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -64,9 +63,7 @@ import androidx.appcompat.widget.SwitchCompat;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
-import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.button.MaterialButton;
-import com.google.android.material.navigation.NavigationBarView;
 import com.google.android.material.slider.LabelFormatter;
 import com.google.android.material.slider.Slider;
 import com.google.android.material.textfield.TextInputEditText;
@@ -273,6 +270,12 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         refreshGeneralsOnlineStatus();
         loadDxvkConfigIntoEditor();
         refreshDiagnosticsSwitches();
+        if (modsPanel != null) {
+            // Returning from GameActivity (launch a mod) or from anything
+            // that could touch the game folder: the Installed list must
+            // re-read reality, not trust its cache.
+            modsPanel.notifyGameFolderMaybeChanged();
+        }
     }
 
     // GeneralsX @feature Android port launcher-ui-2026 08/09/2026 The launcher
@@ -291,19 +294,21 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     private static final int TAB_GRAPHICS = 2;
     private static final int TAB_INTERFACE = 3;
     private static final int TAB_TOOLS = 4;
-    private static final int TAB_HELP = 5;
-    // GeneralsX @feature Android port mod-launcher 16/09/2026 The mod
-    // manager as a first-class bottom-nav destination, GenLauncher-style:
-    // browse/install/update/launch mods without leaving Setup. Hosted by
-    // ModsPanel; the standalone ModManagerActivity wraps the same panel.
-    private static final int TAB_MODS = 6;
+    private static final int TAB_MODS = 5;
+    private static final int TAB_HELP = 6;
+    // GeneralsX @feature Android port launcher-ui 15/09/2026 Mods is a
+    // bottom page again. BottomNavigationView hard-caps at five items (the
+    // sixth threw IllegalArgumentException and broke the whole settings UI),
+    // so the bottom bar is now a custom LinearLayout rail: six equal
+    // destination buttons with the same checked-pill look, no Material cap.
+    // The panel is embedded inline (ModsPanel without its app bar) so the
+    // mod flow lives where the user expects it; ModManagerActivity remains
+    // for the Tools entry and deep links.
 
     private int currentTab = TAB_HOME;
     private FrameLayout contentHost;
     private TextView appBarTitle;
-    // GeneralsX @feature Android port mod-launcher 16/09/2026 The embedded
-    // ModsPanel for TAB_MODS; page-scoped, cleared in clearPageReferences().
-    private ModsPanel modsPanel;
+    private ModsPanel modsPanel;   // non-null only while TAB_MODS is showing
 
     private void buildUi() {
         clearPageReferences();
@@ -333,49 +338,106 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         }
     }
 
-    private BottomNavigationView buildBottomNav() {
-        BottomNavigationView nav = new BottomNavigationView(this);
+    /**
+     * GeneralsX @feature Android port launcher-ui 15/09/2026 Six-destination
+     * bottom rail, replacing BottomNavigationView (five-item hard cap). Same
+     * visual language as the Material bar it replaces: icon over label, an
+     * active-indicator pill behind the selected destination, primary/on-
+     * surface tints, LTR-pinned order (see the rationale the old bar carried).
+     */
+    private LinearLayout buildBottomNav() {
+        LinearLayout rail = new LinearLayout(this);
+        rail.setOrientation(LinearLayout.HORIZONTAL);
+        rail.setLayoutDirection(android.view.View.LAYOUT_DIRECTION_LTR);
+        rail.setBackgroundColor(UiKit.color(this, R.color.gen_surface_container_low));
+        rail.setElevation(0f);
+        int vPad = UiKit.dp(this, 8);
+        rail.setPadding(0, vPad, 0, vPad);
 
-        // Keep the tab order left-to-right in every language, Arabic and Farsi
-        // included. Android mirrors layouts in RTL locales, which is correct for
-        // the content -- and the rest of this launcher is built on start/end so
-        // it mirrors properly -- but it also reversed the five tabs, putting Home
-        // on the right, and that was reported as wrong. The tabs are a fixed rail
-        // of destinations rather than a line of reading, so pin the bar itself to
-        // LTR and leave text direction on the locale, so the labels still shape
-        // and read right-to-left inside their items.
-        nav.setLayoutDirection(android.view.View.LAYOUT_DIRECTION_LTR);
-        nav.setTextDirection(android.view.View.TEXT_DIRECTION_LOCALE);
+        int[][] items = {
+            {TAB_HOME,     R.string.nav_tab_home,     R.drawable.ic_gen_home},
+            {TAB_GRAPHICS, R.string.nav_tab_graphics, R.drawable.ic_gen_display},
+            {TAB_INTERFACE,R.string.nav_tab_interface,R.drawable.ic_gen_globe},
+            {TAB_TOOLS,    R.string.nav_tab_tools,    R.drawable.ic_gen_wrench},
+            {TAB_MODS,     R.string.nav_tab_mods,     R.drawable.ic_gen_chip},
+            {TAB_HELP,     R.string.nav_tab_help,     R.drawable.ic_gen_info},
+        };
+        for (int[] it : items) {
+            rail.addView(buildNavItem(it[0], it[1], it[2]),
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        return rail;
+    }
 
-        nav.setBackgroundColor(UiKit.color(this, R.color.gen_surface_container_low));
-        nav.setElevation(0f);
-        nav.setLabelVisibilityMode(NavigationBarView.LABEL_VISIBILITY_LABELED);
-        nav.setItemIconSize(UiKit.dp(this, 22));
-        // Checked/unchecked pair: the selected item is the one sitting in the
-        // active-indicator pill, so it takes the on-container colour.
-        android.content.res.ColorStateList itemTint = new android.content.res.ColorStateList(
-            new int[][] { new int[] { android.R.attr.state_checked }, new int[0] },
-            new int[] { UiKit.color(this, R.color.gen_on_primary_container),
-                        UiKit.color(this, R.color.gen_on_surface_faint) });
-        nav.setItemIconTintList(itemTint);
-        nav.setItemTextColor(itemTint);
-        nav.setItemActiveIndicatorColor(UiKit.tint(this, R.color.gen_primary_container));
-        nav.setItemRippleColor(UiKit.tint(this, R.color.gen_ripple_primary));
+    private View buildNavItem(int tab, int labelRes, int iconRes) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+        item.setClickable(true);
+        item.setFocusable(true);
+        item.setOnClickListener(v -> showTab(tab));
 
-        Menu menu = nav.getMenu();
-        menu.add(Menu.NONE, TAB_HOME, 0, R.string.nav_tab_home).setIcon(R.drawable.ic_gen_home);
-        menu.add(Menu.NONE, TAB_GRAPHICS, 1, R.string.nav_tab_graphics).setIcon(R.drawable.ic_gen_display);
-        menu.add(Menu.NONE, TAB_INTERFACE, 2, R.string.nav_tab_interface).setIcon(R.drawable.ic_gen_globe);
-        menu.add(Menu.NONE, TAB_TOOLS, 3, R.string.nav_tab_tools).setIcon(R.drawable.ic_gen_wrench);
-        menu.add(Menu.NONE, TAB_MODS, 4, R.string.nav_tab_mods).setIcon(R.drawable.ic_gen_chip);
-        menu.add(Menu.NONE, TAB_HELP, 5, R.string.nav_tab_help).setIcon(R.drawable.ic_gen_info);
+        android.widget.FrameLayout iconHost = new android.widget.FrameLayout(this);
+        android.graphics.drawable.GradientDrawable pillBg =
+            new android.graphics.drawable.GradientDrawable();
+        pillBg.setCornerRadius(UiKit.dp(this, 14));
+        pillBg.setColor(UiKit.color(this, R.color.gen_primary_container));
+        android.view.View pill = new android.view.View(this);
+        pill.setBackground(pillBg);
+        iconHost.addView(pill, new android.widget.FrameLayout.LayoutParams(
+            UiKit.dp(this, 44), UiKit.dp(this, 28)));
+        android.widget.ImageView icon = new android.widget.ImageView(this);
+        icon.setImageResource(iconRes);
+        int iconPad = UiKit.dp(this, 8);
+        icon.setPadding(iconPad, iconPad, iconPad, iconPad);
+        iconHost.addView(icon, new android.widget.FrameLayout.LayoutParams(
+            UiKit.dp(this, 44), UiKit.dp(this, 28)));
+        item.addView(iconHost, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        nav.setOnItemSelectedListener(item -> {
-            showTab(item.getItemId());
-            return true;
-        });
-        nav.setSelectedItemId(currentTab);
-        return nav;
+        android.widget.TextView label = new android.widget.TextView(this);
+        label.setText(labelRes);
+        label.setTextSize(11f);
+        label.setGravity(android.view.Gravity.CENTER);
+        item.addView(label, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        styleNavItem(item, pill, icon, label, tab == currentTab);
+        navItems.add(new NavItem(tab, item, pill, icon, label));
+        return item;
+    }
+
+    private static final class NavItem {
+        final int tab;
+        final LinearLayout item;
+        final android.view.View pill;
+        final android.widget.ImageView icon;
+        final android.widget.TextView label;
+
+        NavItem(int tab, LinearLayout item, android.view.View pill,
+                android.widget.ImageView icon, android.widget.TextView label) {
+            this.tab = tab;
+            this.item = item;
+            this.pill = pill;
+            this.icon = icon;
+            this.label = label;
+        }
+    }
+
+    private final java.util.ArrayList<NavItem> navItems = new java.util.ArrayList<>();
+
+    private void styleNavItem(NavItem n, boolean selected) {
+        styleNavItem(n.item, n.pill, n.icon, n.label, selected);
+    }
+
+    private void styleNavItem(LinearLayout item, android.view.View pill,
+                              android.widget.ImageView icon, android.widget.TextView label,
+                              boolean selected) {
+        pill.setVisibility(selected ? android.view.View.VISIBLE : android.view.View.INVISIBLE);
+        int tint = UiKit.color(this, selected
+            ? R.color.gen_on_primary_container : R.color.gen_on_surface_faint);
+        icon.setColorFilter(tint);
+        label.setTextColor(tint);
     }
 
     private int tabTitle(int tab) {
@@ -383,7 +445,6 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
             case TAB_GRAPHICS:  return R.string.nav_tab_graphics;
             case TAB_INTERFACE: return R.string.nav_tab_interface;
             case TAB_TOOLS:     return R.string.nav_tab_tools;
-            case TAB_MODS:      return R.string.nav_tab_mods;
             case TAB_HELP:      return R.string.nav_tab_help;
             default:            return R.string.nav_tab_home;
         }
@@ -402,12 +463,21 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
             return;  // the plain-widget fallback UI is up; there are no tabs
         }
         clearPageReferences();
+        modsPanel = null;          // page-scoped like every other view ref
+        if (ModDbClient.hostActivity() == this) {
+            ModDbClient.setHostActivity(null);  // leaving the Mods page
+        }
         contentHost.removeAllViews();
+        for (NavItem n : navItems) {
+            styleNavItem(n, n.tab == tab);
+        }
         if (appBarTitle != null) {
             appBarTitle.setText(tabTitle(tab));
         }
 
-        LinearLayout page = UiKit.scrollingPage(contentHost);
+        // The Mods page hosts the full manager panel instead of a scrolling
+        // settings page; every other tab builds into one.
+        LinearLayout page = tab == TAB_MODS ? null : UiKit.scrollingPage(contentHost);
         switch (tab) {
             case TAB_GRAPHICS:
                 buildRenderBackendSection(page);
@@ -433,18 +503,17 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
                 buildDiagnosticsSection(page);
                 break;
             case TAB_MODS:
-                // GeneralsX @feature Android port mod-launcher 16/09/2026
-                // The full mod manager inline. Hosted by ModsPanel (shared
-                // with the standalone ModManagerActivity); clearPageReferences
-                // nulls modsPanel first so a page swap never writes into the
-                // removed view.
+                // Embedded panel (no app bar of its own — the shell's title
+                // row already names the tab); re-created per visit so its
+                // Installed list always reflects the current game folder.
+                // This activity is also the fetch host: ModDbClient falls
+                // back to a WebView (headless, then the visible challenge)
+                // and needs a live Activity to attach them to.
+                ModDbClient.setHostActivity(this);
                 modsPanel = new ModsPanel(this, this, false);
-                modsPanel.notifyGameFolderMaybeChanged();
-                // The panel bounds its own height in onMeasure (embedded
-                // mode); the height here only seeds the first layout pass.
-                page.addView(modsPanel, new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.MATCH_PARENT));
+                contentHost.addView(modsPanel, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT));
                 break;
             case TAB_HELP:
                 buildHelpSection(page);
@@ -463,7 +532,6 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
     /** Forgets every page-scoped view so a stale one is never written to. */
     private void clearPageReferences() {
-        modsPanel = null;
         statusText = null;
         onlineStatusView = null;
         gameLanguageStatusView = null;
@@ -545,23 +613,6 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     }
 
     // ------------------------------------------------------------ Logs entry
-
-    // GeneralsX @feature Android port mod-launcher 14/09/2026 Entry point to
-    // ModManagerActivity. A separate activity (not a Setup page) because the
-    // mod flow has its own two-level navigation (installed/browse -> mod's
-    // files) and its own back-stack; burying that inside Setup's tab swap
-    // would make Back do the wrong thing.
-    private void buildModsSection(LinearLayout page) {
-        LinearLayout card = UiKit.card(page);
-        UiKit.listRow(card, R.drawable.ic_gen_chip,
-            getString(R.string.setup_button_mods),
-            getString(R.string.setup_status_mods_note),
-            this::onOpenMods);
-    }
-
-    private void onOpenMods() {
-        startActivity(new Intent(this, ModManagerActivity.class));
-    }
 
     // GeneralsX @feature Android port launcher-options 15/09/2026 Two
     // power-user launch settings, both consumed by SDL3Main.cpp's argv
@@ -2852,10 +2903,13 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
     // -------------------------------------------------- ModsPanel.Host impl
 
-    // GeneralsX @feature Android port mod-launcher 16/09/2026 The Setup
-    // activity hosts the embedded mod-manager panel (TAB_MODS): it supplies
-    // game launch, folder-picker hand-off and SAF forwarding, exactly like
-    // the standalone ModManagerActivity wrapper does.
+    // GeneralsX @feature Android port launcher-ui 15/09/2026 Setup embeds the
+    // manager panel directly on its Mods bottom page (withAppBar=false), so
+    // Back navigates the panel's screens first and leaves the app only at
+    // the top level; storage-pick results and game-folder changes are
+    // forwarded so the embedded list can never show a deleted mod as
+    // playable. ModManagerActivity keeps its own copy of this Host impl for
+    // the standalone entry.
 
     @Override
     public Activity activity() {
@@ -2875,22 +2929,23 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
     @Override
     public void onBackPressed() {
-        // The embedded panel consumes Back for its own stack first
-        // (files -> detail -> browse); otherwise default behavior.
-        if (currentTab == TAB_MODS && modsPanel != null && modsPanel.onBackPressed()) {
-            return;
+        if (modsPanel != null && modsPanel.onBackPressed()) {
+            return;  // panel consumed it (files -> detail -> browse -> home)
         }
         super.onBackPressed();
     }
 
     @Override
+    protected void onDestroy() {
+        if (ModDbClient.hostActivity() == this) {
+            ModDbClient.setHostActivity(null);
+        }
+        super.onDestroy();
+    }
+
+    @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        // The embedded panel's storage-import picker comes back here.
-        if (requestCode == ModsPanel.REQ_PICK_ARCHIVE && modsPanel != null) {
-            modsPanel.handleActivityResult(requestCode, resultCode, data);
-            return;
-        }
         if (requestCode == 1001 && resultCode == Activity.RESULT_OK && data != null) {
             String path = data.getStringExtra(FolderPickerActivity.EXTRA_SELECTED_PATH);
             if (path != null) {
@@ -2944,6 +2999,12 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
             if (uri != null) {
                 importCustomDriver(uri);
             }
+        }
+        // Embedded Mods panel: the storage-import picker is panel-owned
+        // (ModsPanel.REQ_PICK_ARCHIVE); forward so the panel's install flow
+        // continues with its own request code.
+        if (modsPanel != null) {
+            modsPanel.handleActivityResult(requestCode, resultCode, data);
         }
     }
 

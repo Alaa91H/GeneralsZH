@@ -270,6 +270,10 @@
     <string name="mods_install_done">Installed %1$s. Tap it under Installed to play.</string>
     <string name="mods_err_title">Something went wrong</string>
     <string name="mods_err_fetch">Could not reach ModDB: %1$s</string>
+    <string name="challenge_title">One-time site verification</string>
+    <string name="challenge_body">ModDB is blocking this network\'s automated access. Solve the verification below once (like in a browser); the app will browse by itself afterwards.</string>
+    <string name="challenge_done">Verified — retrying download…</string>
+    <string name="challenge_hint">If nothing happens, tap Reload.</string>
     <string name="mods_err_install">Install failed: %1$s</string>
     <string name="mods_err_write_cfg">Could not save the selection: %1$s</string>
 

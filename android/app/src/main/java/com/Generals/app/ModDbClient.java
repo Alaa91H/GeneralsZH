@@ -41,6 +41,8 @@
 
 package com.Generals.app;
 
+import android.app.Activity;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -154,8 +156,75 @@ final class ModDbClient {
 
     // --------------------------------------------------------- page fetching
 
-    /** Single entry point for HTML page GETs: pacing + rate-limit backoff. */
+    /** Single entry point for HTML page GETs: pacing + rate-limit backoff.
+     *  GeneralsX @bugfix Android port mod-launcher 15/09/2026 On networks
+     *  where Cloudflare has bot-verdicted the IP, the direct HttpURLConnection
+     *  path gets 403 "Just a moment..." forever — observed on the test
+     *  device's whole line, from the phone and from desktop curl alike. A
+     *  real browser passes the challenge by RUNNING its JavaScript, so the
+     *  retry goes through a headless WebView (WebViewFetch) and returns the
+     *  post-challenge DOM; parsing then proceeds identically. The cf_clearance
+     *  cookie the WebView earns is shared system-wide by CookieManager, and
+     *  the direct path below echoes it, so subsequent requests usually go
+     *  straight through again until it expires. */
     static String fetchPage(String url) throws IOException {
+        try {
+            return fetchPageDirect(url);
+        } catch (IOException direct) {
+            String msg = direct.getMessage();
+            boolean blocked = msg != null && (msg.contains("HTTP 403")
+                || msg.contains("blocking automated access"));
+            if (!blocked) {
+                throw direct;       // ordinary network error: not a challenge
+            }
+            Activity host = s_hostActivity;
+            if (host == null || host.isFinishing()) {
+                throw direct;       // no UI context to run a WebView in
+            }
+            // Escape hatch 1: headless WebView runs the challenge's JS in
+            // the background. Passes interactive-light challenges; a
+            // managed-challenge interstitial that wants a human stays up.
+            String html = null;
+            IOException headlessError = null;
+            try {
+                html = WebViewFetch.fetch(host, url);
+            } catch (IOException e) {
+                headlessError = e;
+            }
+            if (html != null && !WebViewFetch.looksLikeChallenge(html)) {
+                synchronized (PACING_LOCK) {
+                    s_lastPageFetchMs = System.currentTimeMillis();
+                }
+                return html;
+            }
+            // Escape hatch 2: the headless engine could not clear it (or the
+            // page is still the interstitial). Show the challenge to the USER
+            // in an in-app browser; once they solve it, the cf_clearance
+            // cookie lands in the shared CookieManager and the direct path
+            // below succeeds like any ordinary browser session.
+            ChallengeActivity.launch(host, url);
+            Boolean cleared = ChallengeActivity.awaitResult(5 * 60 * 1000);
+            if (!Boolean.TRUE.equals(cleared)) {
+                throw new IOException(headlessError != null
+                    ? "site is blocking this network (" + headlessError.getMessage() + ")"
+                    : "site is blocking this network (challenge did not clear)");
+            }
+            return fetchPageDirect(url);
+        }
+    }
+
+    /** The activity WebViewFetch may attach its headless engine to. */
+    static void setHostActivity(Activity activity) {
+        s_hostActivity = activity;
+    }
+
+    static Activity hostActivity() {
+        return s_hostActivity;
+    }
+
+    private static Activity s_hostActivity;
+
+    private static String fetchPageDirect(String url) throws IOException {
         synchronized (PACING_LOCK) {
             long wait = s_backoffUntilMs - System.currentTimeMillis();
             if (wait <= 0) {
@@ -177,6 +246,15 @@ final class ModDbClient {
             conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setRequestProperty("User-Agent", USER_AGENT);
             conn.setRequestProperty("Accept", "text/html,application/xhtml+xml");
+            // GeneralsX @bugfix mod-launcher 15/09/2026 Echo the cf_clearance
+            // cookie a previous WebView challenge pass earned (CookieManager
+            // stores it app-wide); with it, the direct path keeps working
+            // until the cookie expires without spawning another WebView.
+            String cookie = android.webkit.CookieManager.getInstance()
+                .getCookie(url);
+            if (cookie != null && !cookie.isEmpty()) {
+                conn.setRequestProperty("Cookie", cookie);
+            }
             final int status = conn.getResponseCode();
             if (status == 429 || status == 503) {
                 synchronized (PACING_LOCK) {

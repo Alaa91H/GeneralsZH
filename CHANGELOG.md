@@ -7,6 +7,54 @@ and the project versions per [Semantic Versioning](https://semver.org/):
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-09-16
+
+### Fixed
+
+- **Normal settings UI loads again on every device** — the launcher
+  crashed into the plain-widget fallback screen ever since the Mods
+  bottom-nav tab exceeded `BottomNavigationView`'s hard five-item cap
+  (`IllegalArgumentException` while building the menu). Two root causes
+  were fixed on-device:
+  - The bottom bar is now a custom six-destination rail (icon over
+    label, active-indicator pill, same visual language, LTR-pinned
+    order) with no Material item cap.
+  - The manifest exposed **two** launcher icons (game + settings).
+    Tapping the game icon on a device with no configured game folder
+    hit `GameActivity`'s early-exit path, and a plain `finish()` there
+    throws `SuperNotCalledException` — while entering
+    `SDLActivity.onCreate()` just to leave is not an option either (it
+    dlopens `libmain.so` once and guards re-entry with `System.exit(0)`;
+    a reflection `Method.invoke` "super bounce" dispatches virtually and
+    recurses, also observed on-device). A new plain `SplashActivity` is
+    now the single launcher entry and routes to Game or Setup before any
+    SDL class exists; `GameActivity` keeps a `MethodHandle`-based
+    `invokespecial` guard as defense in depth.
+
+### Changed
+
+- **Mods is a bottom page again** — the full mod manager is embedded
+  inline as the sixth tab (`Home · Graphics · Interface · Tools ·
+  Mods · Help`), with Back wired through the panel's own navigation
+  (files → detail → browse → installed), storage-import results
+  forwarded, and the Installed list re-verified on every resume. The
+  standalone Mods activity remains for the Tools entry.
+
+### Fixed
+
+- **ModDB fetch "network blocked" resolved end-to-end** — on networks
+  whose IP has earned a Cloudflare bot verdict (ModDB answers the plain
+  HTTP client *and* the headless WebView with "Just a moment...")
+  fetching never completes without a human. The fetch chain is now:
+  direct request → headless WebView (runs the challenge JS, samples the
+  DOM until it stops being the interstitial instead of grabbing the
+  pre-JS challenge page) → if still blocked, a visible in-app browser
+  (`ChallengeActivity`) where the user solves the challenge **once**;
+  the earned `cf_clearance` cookie lands in the shared `CookieManager`
+  and the direct path works again afterwards. Verified on-device: the
+  ModDB listing (30 mods) loads inside the Mods page after the visible
+  verification cleared the network-level block.
+
 ## [1.5.1] - 2026-09-16
 
 ### Added

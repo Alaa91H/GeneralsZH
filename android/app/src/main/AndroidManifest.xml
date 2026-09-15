@@ -83,21 +83,40 @@
 
         <activity
             android:name=".GameActivity"
-            android:exported="true"
+            android:exported="false"
             android:screenOrientation="landscape"
             android:launchMode="singleInstance"
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
             android:preferMinimalPostProcessing="true"
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation">
+        </activity>
+
+        <!-- GeneralsX @bugfix Android port 15/09/2026 Single LAUNCHER entry.
+             The manifest used to expose BOTH GameActivity and SetupActivity
+             as launcher icons; a device without a configured game folder
+             hitting the GameActivity icon crashed (SuperNotCalledException:
+             SDLActivity cannot be entered and lawfully left when its
+             super.onCreate() must not run), and the double icon confused the
+             home screen. SplashActivity is a plain Activity that routes to
+             Game when a valid game folder is configured, and to Setup
+             otherwise; the Setup screen remains reachable from within the
+             app (Tools/Help) so configuring the game folder or reading a
+             crash log never depends on the game having launched. -->
+        <activity
+            android:name=".SplashActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:theme="@style/Theme.Generals">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- GeneralsX @build Android port 07/07/2026 A second, always-present
-             launcher icon: configuring the game folder or reading a crash log
-             must never depend on the game itself having launched successfully.
+        <!-- GeneralsX @bugfix Android port 15/09/2026 No longer a LAUNCHER:
+             configuring the game folder or reading a crash log must never
+             depend on the game itself having launched successfully, and the
+             old second launcher icon crashed on unconfigured devices.
 
              GeneralsX @bugfix Android port 31/07/2026 Was locked to
              "landscape" (same as GameActivity) to sidestep a real
@@ -115,15 +134,11 @@
              never rotating in the first place. -->
         <activity
             android:name=".SetupActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="@string/setup_window_title"
             android:icon="@mipmap/ic_launcher_setup"
             android:theme="@style/Theme.Generals"
             android:configChanges="orientation|screenSize|keyboardHidden">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity>
 
         <activity
@@ -137,6 +152,16 @@
              with, delete without touching game data. -->
         <activity
             android:name=".ModManagerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Generals"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- GeneralsX @feature Android port mod-launcher 15/09/2026 The
+             visible Cloudflare escape hatch: an in-app browser the user
+             solves ModDB's challenge in when the headless WebView cannot.
+             Launched from ModDbClient's fetch path only, so exported=false. -->
+        <activity
+            android:name=".ChallengeActivity"
             android:exported="false"
             android:theme="@style/Theme.Generals"
             android:configChanges="orientation|screenSize|keyboardHidden" />

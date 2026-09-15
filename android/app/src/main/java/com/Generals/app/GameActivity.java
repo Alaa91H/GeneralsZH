@@ -101,6 +101,30 @@ public class GameActivity extends SDLActivity {
             // into an app state that can only end in a black screen or a
             // confusing crash the user has no way to diagnose.
             Log.i(TAG, "no valid game folder configured; redirecting to Setup");
+            // GeneralsX @bugfix Android port 15/09/2026 A plain finish() here
+            // throws SuperNotCalledException (ActivityThread's mCalled check).
+            // Rather than enter SDLActivity.onCreate() at all (its dlopen of
+            // libmain.so + System.exit(0) re-entry guard make "enter then
+            // leave" poisonous), routing now happens in SplashActivity, a
+            // plain Activity that starts GameActivity ONLY with a valid game
+            // folder. The guard stays as defense in depth and satisfies
+            // mCalled with true invokespecial semantics: MethodHandle
+            // findSpecial dispatches to Activity.onCreate NON-virtually
+            // (java.lang.reflect Method.invoke would dispatch virtually and
+            // recurse into this override -- observed on-device). Its body is
+            // trivial and touches no SDL machinery, preserving the "never
+            // touch libmain.so on a misconfigured install" contract.
+            try {
+                java.lang.invoke.MethodHandle onCreate =
+                    java.lang.invoke.MethodHandles.lookup().findSpecial(
+                        android.app.Activity.class,
+                        "onCreate",
+                        java.lang.invoke.MethodType.methodType(void.class, Bundle.class),
+                        GameActivity.class);
+                onCreate.invoke(this, savedInstanceState);
+            } catch (Throwable t) {
+                Log.w(TAG, "super bounce failed", t);
+            }
             startActivity(new Intent(this, SetupActivity.class));
             finish();
             return;
