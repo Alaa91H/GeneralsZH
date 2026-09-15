@@ -30,6 +30,14 @@
 // (jsoup) would triple this app's method count for one screen. Every parse
 // result is defensive: an unexpected page shape yields an empty list or a
 // null field and a user-visible error string, never a crash.
+//
+// GeneralsX @performance 15/09/2026 Request pacing: ModDB fronts everything
+// with Cloudflare, and a burst of page GETs (list -> profile -> downloads,
+// one per tap) can trip a soft rate limit that then serves challenge pages
+// for the whole IP for a while. All page fetches now go through one gated
+// entry point that keeps >= 1.2s between requests, and a 429/503 response
+// backs off (30s) instead of hammering. The app's own fetch pattern is
+// human-paced to begin with; this just removes the accidental burst paths.
 
 package com.generalsx.zerohour;
 
@@ -51,12 +59,22 @@ final class ModDbClient {
     static final String SITE = "https://www.moddb.com";
     // The game's own index page. Everything the Browse tab shows comes from here.
     private static final String MODS_LIST_URL = SITE + "/games/cc-generals-zero-hour/mods";
-    private static final String USER_AGENT =
+    // Package-visible: ThumbCache reuses the same UA for imagehost fetches.
+    static final String USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
     /** Per-file guard, matching SetupActivity's language-pack cap. */
     static final long MAX_DOWNLOAD_BYTES = 8L * 1024 * 1024 * 1024;
+
+    // GeneralsX @performance 15/09/2026 The pacing gate. Static because the
+    // client is stateless and every screen shares the same site; the guard
+    // object only ever protects two long fields.
+    private static final long MIN_PAGE_INTERVAL_MS = 1200;
+    private static final long RATE_LIMIT_BACKOFF_MS = 30_000;
+    private static final Object PACING_LOCK = new Object();
+    private static long s_lastPageFetchMs = 0;
+    private static long s_backoffUntilMs = 0;
 
     // ------------------------------------------------------------ data types
 
@@ -65,11 +83,21 @@ final class ModDbClient {
         final String name;        // display name, decoded
         final String profilePath; // site path of the mod's profile, e.g. /mods/cc-shockwave
         final String description; // one-line blurb from the list row (may be empty)
+        // GeneralsX @feature 15/09/2026 Optional rich fields for the card
+        // layout. Every one is nullable/empty-safe: an older or reshaped page
+        // simply renders a plainer card, it never fails the list.
+        final String imageUrl;    // row thumbnail (ModDB imagehost CDN), or null
+        final String rating;      // "9.2" style text, or null
+        final String downloads;   // page-scoped download count as shown, or null
 
-        ModSummary(String name, String profilePath, String description) {
+        ModSummary(String name, String profilePath, String description,
+                   String imageUrl, String rating, String downloads) {
             this.name = name;
             this.profilePath = profilePath;
             this.description = description;
+            this.imageUrl = imageUrl;
+            this.rating = rating;
+            this.downloads = downloads;
         }
     }
 
@@ -90,14 +118,44 @@ final class ModDbClient {
         }
     }
 
+    /**
+     * GeneralsX @feature 15/09/2026 A mod's profile detail: the full
+     * description and hero image shown on the detail screen before the user
+     * commits to a download. Fetched from the same profile page whose
+     * downloads tab the file list already comes from — no new endpoint.
+     */
+    static final class ModDetails {
+        final String profilePath;
+        final String name;
+        final String description; // profile page's description section, decoded
+        final String imageUrl;    // profile hero/imagehost URL, or null
+
+        ModDetails(String profilePath, String name, String description, String imageUrl) {
+            this.profilePath = profilePath;
+            this.name = name;
+            this.description = description;
+            this.imageUrl = imageUrl;
+        }
+    }
+
     // --------------------------------------------------------- page fetching
 
-    /**
-     * GETs a ModDB page as text. Throws with a readable message when the
-     * response isn't usable (HTTP error or a Cloudflare interstitial, which
-     * has a distinct title). Callers surface that message as-is.
-     */
+    /** Single entry point for HTML page GETs: pacing + rate-limit backoff. */
     static String fetchPage(String url) throws IOException {
+        synchronized (PACING_LOCK) {
+            long wait = s_backoffUntilMs - System.currentTimeMillis();
+            if (wait <= 0) {
+                wait = s_lastPageFetchMs + MIN_PAGE_INTERVAL_MS - System.currentTimeMillis();
+            }
+            if (wait > 0) {
+                try {
+                    Thread.sleep(wait);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("cancelled");
+                }
+            }
+        }
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(url).openConnection();
@@ -106,6 +164,15 @@ final class ModDbClient {
             conn.setRequestProperty("User-Agent", USER_AGENT);
             conn.setRequestProperty("Accept", "text/html,application/xhtml+xml");
             final int status = conn.getResponseCode();
+            if (status == 429 || status == 503) {
+                synchronized (PACING_LOCK) {
+                    s_backoffUntilMs = System.currentTimeMillis() + RATE_LIMIT_BACKOFF_MS;
+                }
+                throw new IOException("site is rate-limiting us — try again in a minute");
+            }
+            synchronized (PACING_LOCK) {
+                s_lastPageFetchMs = System.currentTimeMillis();
+            }
             if (status < 200 || status >= 300) {
                 throw new IOException("HTTP " + status);
             }
@@ -146,11 +213,7 @@ final class ModDbClient {
         List<ModSummary> out = new ArrayList<>();
         Matcher row = ROW_START.matcher(html);
         while (row.find()) {
-            int end = html.indexOf("</div>\t</div>", row.end());
-            if (end < 0) {
-                end = Math.min(html.length(), row.end() + 4096);
-            }
-            String block = html.substring(row.end(), end);
+            String block = rowBlock(html, row);
             String href = firstMatch(block, MOD_PROFILE_HREF);
             if (href == null || href.contains("/add")) {
                 continue; // "Add mod" row and fragments without a profile link
@@ -163,7 +226,10 @@ final class ModDbClient {
                 continue;
             }
             String desc = decodeEntities(firstMatch(block, ROW_BLURB));
-            out.add(new ModSummary(name, href, desc == null ? "" : desc));
+            out.add(new ModSummary(name, href, desc == null ? "" : desc,
+                                   firstMatch(block, ROW_THUMB),
+                                   decodeEntities(firstMatch(block, ROW_RATING)),
+                                   decodeEntities(firstMatch(block, ROW_DOWNLOADS))));
         }
         if (hasMore != null && hasMore.length > 0) {
             hasMore[0] = html.contains("/page/" + (page + 1));
@@ -178,11 +244,7 @@ final class ModDbClient {
         List<ModSummary> out = new ArrayList<>();
         Matcher row = ROW_START.matcher(html);
         while (row.find()) {
-            int end = html.indexOf("</div>\t</div>", row.end());
-            if (end < 0) {
-                end = Math.min(html.length(), row.end() + 4096);
-            }
-            String block = html.substring(row.end(), end);
+            String block = rowBlock(html, row);
             String href = firstMatch(block, MOD_PROFILE_HREF);
             if (href == null || href.contains("/add")) {
                 continue;
@@ -192,7 +254,10 @@ final class ModDbClient {
                 continue;
             }
             String desc = decodeEntities(firstMatch(block, ROW_BLURB));
-            out.add(new ModSummary(name, href, desc == null ? "" : desc));
+            out.add(new ModSummary(name, href, desc == null ? "" : desc,
+                                   firstMatch(block, ROW_THUMB),
+                                   decodeEntities(firstMatch(block, ROW_RATING)),
+                                   decodeEntities(firstMatch(block, ROW_DOWNLOADS))));
         }
         return out;
     }
@@ -205,11 +270,7 @@ final class ModDbClient {
         List<ModFile> out = new ArrayList<>();
         Matcher row = ROW_START.matcher(html);
         while (row.find()) {
-            int end = html.indexOf("</div>\t</div>", row.end());
-            if (end < 0) {
-                end = Math.min(html.length(), row.end() + 4096);
-            }
-            String block = html.substring(row.end(), end);
+            String block = rowBlock(html, row);
             String page = firstMatch(block, DOWNLOAD_PAGE_HREF);
             if (page == null) {
                 continue;
@@ -227,6 +288,45 @@ final class ModDbClient {
                                 date == null ? "" : date, null, page));
         }
         return out;
+    }
+
+    /**
+     * GeneralsX @feature 15/09/2026 Fetches a mod's profile page for the
+     * detail screen: full description + hero image. The description section
+     * is <div id="introwrap"> on mod profiles; a reshaped page yields empty
+     * fields and the detail screen renders what it has.
+     */
+    static ModDetails fetchModDetails(ModSummary summary) throws IOException {
+        String html = fetchPage(SITE + summary.profilePath);
+        String desc = "";
+        Matcher intro = PROFILE_INTRO.matcher(html);
+        if (intro.find()) {
+            String raw = html.substring(intro.end(),
+                Math.min(html.length(), intro.end() + 8192));
+            int close = raw.indexOf("</div>");
+            if (close >= 0) {
+                raw = raw.substring(0, close);
+            }
+            desc = stripHtml(raw);
+            if (desc.length() > 1200) {
+                desc = desc.substring(0, 1200) + "\u2026";
+            }
+        }
+        String hero = firstMatch(html, PROFILE_HERO);
+        if (hero == null) {
+            hero = firstMatch(html, PROFILE_HERO_META);
+        }
+        return new ModDetails(summary.profilePath, summary.name, desc,
+                              hero != null ? hero : summary.imageUrl);
+    }
+
+    /** Truncates the markup after a list-row start marker into a parse block. */
+    private static String rowBlock(String html, Matcher row) {
+        int end = html.indexOf("</div>\t</div>", row.end());
+        if (end < 0) {
+            end = Math.min(html.length(), row.end() + 4096);
+        }
+        return html.substring(row.end(), end);
     }
 
     // --------------------------------------------------------- download path
@@ -257,18 +357,44 @@ final class ModDbClient {
         throw new IOException("too many redirects");
     }
 
-    /** Opens the final download stream for a resolved URL. Caller closes it. */
-    static InputStream openDownloadStream(String url, HttpURLConnection[] outConn) throws IOException {
+    /**
+     * Opens a byte stream of the file starting at the given offset (0 for a
+     * fresh download) and reports the total size if the server exposes one.
+     * GeneralsX @feature 15/09/2026 Resume support: a 2 GB download that dies
+     * at 90% restarts from 90% of the .dl partial, not from zero — the
+     * ModDB CDN honors standard Range requests. totalSize[0] receives the
+     * full file size when the response carries Content-Length (-1 otherwise);
+     * with an offset the status is 206 and Content-Length is the remainder.
+     */
+    static InputStream openDownloadStream(String url, long offset,
+                                          long[] totalSize,
+                                          HttpURLConnection[] outConn) throws IOException {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
         conn.setReadTimeout(READ_TIMEOUT_MS);
         conn.setRequestProperty("User-Agent", USER_AGENT);
         conn.setRequestProperty("Accept", "application/octet-stream, */*");
+        if (offset > 0) {
+            conn.setRequestProperty("Range", "bytes=" + offset + "-");
+        }
         conn.setInstanceFollowRedirects(true);
         final int status = conn.getResponseCode();
+        if (offset > 0 && status == 416) {
+            // "Range not satisfiable" — most often the CDN does not honor
+            // Range at all or the partial is already complete. Caller retries
+            // from zero.
+            conn.disconnect();
+            throw new IOException("resume refused (HTTP 416)");
+        }
         if (status < 200 || status >= 300) {
             conn.disconnect();
             throw new IOException("HTTP " + status);
+        }
+        long total = conn.getContentLength();
+        if (totalSize != null && totalSize.length > 0) {
+            // On 206 the Content-Length covers only the remainder; adding the
+            // offset yields the absolute file size the progress bar needs.
+            totalSize[0] = (status == 206 && total > 0) ? total + offset : total;
         }
         if (outConn != null && outConn.length > 0) {
             outConn[0] = conn;
@@ -329,6 +455,21 @@ final class ModDbClient {
         Pattern.compile("<time datetime=\"[^\"]*\">([^<]+)</time>");
     private static final Pattern SUBHEADING_CATEGORY =
         Pattern.compile("subheading\">\\s*(?:<time[^>]*>[^<]*</time>)?\\s*([A-Za-z ][^<]{2,40})<");
+    // GeneralsX @feature 15/09/2026 Row thumbnails: ModDB's imagehost CDN URLs
+    // in the row's img src. imagethumb URLs are small (<100KB) and stable.
+    private static final Pattern ROW_THUMB =
+        Pattern.compile("src=\"(https://[^\"]*(?:imagehost|moddb)\\.com/[^\"]*(?:imagethumb|thumb)[^\"]*\\.(?:jpg|png|jpeg))\"");
+    private static final Pattern ROW_RATING =
+        Pattern.compile("class=\"rating\"[^>]*>\\s*([0-9.]+)");
+    private static final Pattern ROW_DOWNLOADS =
+        Pattern.compile("([0-9,.]+)\\s*downloads");
+    // GeneralsX @feature 15/09/2026 Profile-page description + hero image.
+    private static final Pattern PROFILE_INTRO =
+        Pattern.compile("id=\"introwrap\"");
+    private static final Pattern PROFILE_HERO =
+        Pattern.compile("src=\"(https://[^\"]*(?:imagehost|moddb)\\.com/[^\"]*/images/mods/[^\"]+\\.(?:jpg|png|jpeg))\"");
+    private static final Pattern PROFILE_HERO_META =
+        Pattern.compile("property=\"og:image\"\\s+content=\"([^\"]+)\"");
     // Profile links (/mods/<name>) but not ones into a mod's downloads tree
     // (those belong to file rows, not the mod itself).
     private static final Pattern MOD_PROFILE_HREF =
@@ -339,6 +480,9 @@ final class ModDbClient {
         Pattern.compile("href=\"(/downloads/start/[0-9]+)\"");
 
     private static String firstMatch(String text, Pattern p) {
+        if (text == null) {
+            return null;
+        }
         Matcher m = p.matcher(text);
         return m.find() ? m.group(1) : null;
     }
@@ -346,6 +490,20 @@ final class ModDbClient {
     private static String attr(String text, String name) {
         Matcher m = Pattern.compile(name + "=\"([^\"]*)\"").matcher(text);
         return m.find() ? m.group(1) : null;
+    }
+
+    /** Strips tags and entities from a page fragment for plain-text display. */
+    private static String stripHtml(String raw) {
+        String text = raw.replaceAll("<br\\s*/?>", "\n")
+                         .replaceAll("</p>\\s*<p[^>]*>", "\n\n")
+                         .replaceAll("<[^>]+>", " ");
+        text = decodeEntities(text);
+        // Collapse runs of whitespace, but keep the \n breaks above.
+        text = text.replaceAll("[ \\t\\x0B\\f\\r]+", " ")
+                   .replaceAll(" ?\\n ?", "\n")
+                   .replaceAll("\n{3,}", "\n\n")
+                   .trim();
+        return text;
     }
 
     /** The handful of entities ModDB actually emits in these fields. */

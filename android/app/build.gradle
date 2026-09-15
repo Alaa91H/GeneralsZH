@@ -161,5 +161,12 @@ dependencies {
     // Apache-2.0, no transitive dependencies. RAR5 archives are rejected with
     // a clear message rather than half-extracted.
     implementation 'com.github.junrar:junrar:7.5.5'
+
+    // GeneralsX @feature Android port mod-launcher 15/09/2026 7z extraction
+    // for the mod manager (ModInstaller.extract7z) -- releases shipped as .7z
+    // were previously refused outright. Apache-2.0; pulls commons-io and
+    // commons-codec transitively. RAR5 remains unsupported (junrar is RAR4
+    // only) and is still rejected with a clear message.
+    implementation 'org.apache.commons:commons-compress:1.27.1'
 }
 
