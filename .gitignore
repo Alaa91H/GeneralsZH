@@ -9,6 +9,13 @@
 
 *.user
 *.ncb
+# GeneralsX @build rebrand 15/09/2026 Release signing material is NEVER
+# committed: the private keystore and its passwords live in secrets/
+# (local) and in the repo's GitHub Actions secrets (CI). CI injects the
+# keystore as a base64 secret before Gradle runs -- see
+# .github/workflows/build-android.yml and android/app/build.gradle.
+secrets/
+android/app/release-signing.properties
 /build*
 nbproject/
 project/

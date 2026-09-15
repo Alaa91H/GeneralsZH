@@ -7,6 +7,34 @@ and the project versions per [Semantic Versioning](https://semver.org/):
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-09-16
+
+### Added
+
+- **Fixed private release signing key** — release APKs are now signed
+  with a dedicated 4096-bit RSA key (`CN=Generals, OU=GeneralsX,
+  O=Alaa91H`) instead of the well-known committed debug key. The
+  keystore is never committed: locally it lives in the gitignored
+  `secrets/` directory with its passwords in
+  `secrets/signing.properties`; CI receives it through encrypted
+  GitHub Actions secrets (`SIGNING_KEYSTORE`, `SIGNING_STORE_PASSWORD`,
+  `SIGNING_KEY_ALIAS`, `SIGNING_KEY_PASSWORD`) that are decoded to disk
+  just before Gradle runs.
+- **Signature verification in CI** — after packaging, the workflow
+  verifies the APK's certificate DN with apksigner and fails the build
+  if it is not the Generals release key, so a missing/wrong secret can
+  never silently publish an APK that Android would refuse to install
+  over a release-signed one. A run without the secret falls back to the
+  committed debug key with a loud warning (fresh-clone builds still
+  work; they simply cannot update a release-signed install).
+
+### Changed
+
+- Android treats the first release-signed APK as a new signature: users
+  of previous builds (debug-key-signed) must uninstall once before
+  installing 1.5.1 or later. All subsequent builds install over each
+  other as before — that is the point of the fixed key.
+
 ## [1.5.0] - 2026-09-16
 
 Full rebrand of the Android app: the launcher is now simply **Generals**

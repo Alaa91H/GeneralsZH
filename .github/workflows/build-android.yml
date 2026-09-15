@@ -453,19 +453,45 @@ jobs:
           echo "version_name=${{ inputs.version_name || '' }}" >> "$GITHUB_OUTPUT"
           echo "apk_name=Generals-android-run${{ github.run_number }}.apk" >> "$GITHUB_OUTPUT"
 
+      # GeneralsX @feature secrets 15/09/2026 Restore the private release
+      # signing key. The keystore lives in the SIGNING_KEYSTORE secret as
+      # base64 (the repo never commits it -- secrets/ is gitignored); it is
+      # decoded to the path Gradle expects (repo-root/secrets/) and the
+      # passwords/alias flow through env vars that android/app/build.gradle
+      # reads. apksigner verifies the certificate DN after packaging so a
+      # wrong/missing key fails the build here instead of shipping an APK
+      # that cannot update over the installed one.
+      - name: Restore release signing key
+        env:
+          SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SIGNING_KEYSTORE}" ]; then
+            echo "::warning::SIGNING_KEYSTORE secret is not set -- this build falls back to the public debug key and cannot update a release-signed install."
+            exit 0
+          fi
+          mkdir -p secrets
+          printf '%s' "${SIGNING_KEYSTORE}" | base64 -d > secrets/generals-release.keystore
+          test -s secrets/generals-release.keystore || { echo "::error::decoded keystore is empty"; exit 1; }
+          echo "SIGNING_STORE_FILE=secrets/generals-release.keystore" >> "$GITHUB_ENV"
+
       - name: Package APK
         env:
           # scripts/build/android/package-android-zh.sh uses these to stage
-          # jniLibs/, the SDL3 Java glue, and fonts, then invokes Gradle. Same
-          # fixed debug.keystore every run (committed in android/app/) is what
-          # makes consecutive CI builds installable as updates over each other
-          # rather than requiring an uninstall. versionTag comes from the
-          # triggering git tag on tag pushes; CODE/NAME overrides stay for
-          # one-off manual dispatches.
+          # jniLibs/, the SDL3 Java glue, and fonts, then invokes Gradle.
+          # Signing: the private release key restored two steps above (env
+          # vars take precedence over the local secrets/signing.properties
+          # file android/app/build.gradle also reads). versionTag comes from
+          # the triggering git tag on tag pushes; CODE/NAME overrides stay
+          # for one-off manual dispatches.
           GX_ANDROID_STAGING: ${{ github.workspace }}/android-staging
           GX_ANDROID_VERSION_TAG: ${{ steps.artifact.outputs.version_tag }}
           GX_ANDROID_VERSION_CODE: ${{ steps.artifact.outputs.version_code }}
           GX_ANDROID_VERSION_NAME: ${{ steps.artifact.outputs.version_name }}
+          SIGNING_STORE_FILE: ${{ env.SIGNING_STORE_FILE }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           ./scripts/build/android/package-android-zh.sh
 
@@ -476,6 +502,20 @@ jobs:
           if [ ! -f "$APK" ]; then echo "::error::APK not found at $APK"; exit 1; fi
           cp "$APK" "${{ steps.artifact.outputs.apk_name }}"
           echo "path=${{ steps.artifact.outputs.apk_name }}" >> "$GITHUB_OUTPUT"
+
+      # GeneralsX @feature secrets 15/09/2026 Prove which identity signed the
+      # APK we are about to publish. Gate on the DN so a run that silently
+      # lost its signing secret fails loudly here instead of shipping an APK
+      # that Android will refuse to install over the release-signed one.
+      - name: Verify release signature
+        if: ${{ env.SIGNING_STORE_FILE != '' }}
+        run: |
+          set -euo pipefail
+          BT="$(ls -d ${ANDROID_HOME}/build-tools/*/ | sort | tail -1)"
+          CERTS="$("${BT}apksigner" verify --print-certs "${{ steps.locate.outputs.path }}" 2>&1)"
+          echo "$CERTS"
+          echo "$CERTS" | grep -q "CN=Generals, OU=GeneralsX, O=Alaa91H" \
+            || { echo "::error::APK is NOT signed with the Generals release key"; exit 1; }
 
       # GeneralsX @bugfix Android CI 07/07/2026 A real device caught what CI
       # missed: run #10's APK was missing libgamespy.so (a genuine DT_NEEDED

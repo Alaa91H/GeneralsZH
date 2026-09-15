@@ -321,6 +321,12 @@ if [[ -z "${GRADLE_VERSION_ARG}" && -n "${GX_ANDROID_VERSION_TAG:-}" ]]; then
     GRADLE_VERSION_ARG="-PversionTag=${GX_ANDROID_VERSION_TAG}"
 fi
 
+# GeneralsX @feature secrets 15/09/2026 Pass the release-signing env vars
+# through to Gradle (android/app/build.gradle reads them directly from the
+# environment; this export block exists so the invocation below keeps them
+# even when the script is run under `env -i` in sandboxed local builds).
+export SIGNING_STORE_FILE SIGNING_STORE_PASSWORD SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD
+
 echo "==> ${GRADLE_CMD} assembleDebug ${GRADLE_VERSION_ARG}"
 "${GRADLE_CMD}" assembleDebug ${GRADLE_VERSION_ARG}
 
