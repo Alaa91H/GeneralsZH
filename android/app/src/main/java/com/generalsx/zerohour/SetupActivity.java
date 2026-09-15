@@ -42,12 +42,14 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.Settings;
+import android.text.InputType;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
 import android.view.ContextThemeWrapper;
+import android.view.Gravity;
 import android.view.Menu;
 import android.view.View;
 import android.widget.Button;
@@ -342,6 +344,9 @@ public class SetupActivity extends Activity {
                     buildCustomDriverSection(page);
                     buildDxvkConfigSection(page);
                 }
+                // GeneralsX @feature Android port launcher-options 15/09/2026
+                // Fixed-resolution override + advanced launch arguments.
+                buildLaunchOptionsSection(page);
                 break;
             case TAB_INTERFACE:
                 buildLanguageSection(page);
@@ -430,6 +435,16 @@ public class SetupActivity extends Activity {
         UiKit.sectionHeader(help, R.drawable.ic_gzh_doc,
             getString(R.string.setup_card_how_it_works), false);
         UiKit.supporting(help, getString(R.string.setup_how_it_works_body));
+
+        // GeneralsX @feature Android port app-update 15/09/2026 Sideloaded
+        // APKs get no Play-store update path; this is the self-update flow.
+        LinearLayout updates = UiKit.card(page);
+        UiKit.sectionHeader(updates, R.drawable.ic_gzh_download,
+            getString(R.string.update_check_label), false);
+        UiKit.supporting(updates, getString(R.string.update_check_note));
+        UiKit.button(updates, UiKit.BTN_TONAL, R.drawable.ic_gzh_refresh,
+            getString(R.string.update_check_now),
+            () -> AppUpdateChecker.checkAndOffer(this));
     }
 
     // The build's own version, as the manifest carries it -- no new string
@@ -459,6 +474,141 @@ public class SetupActivity extends Activity {
 
     private void onOpenMods() {
         startActivity(new Intent(this, ModManagerActivity.class));
+    }
+
+    // GeneralsX @feature Android port launcher-options 15/09/2026 Two
+    // power-user launch settings, both consumed by SDL3Main.cpp's argv
+    // injection blocks next to the -mod injection:
+    //
+    //   Fixed resolution -- written to prefs as "WxH" (or empty = auto) and
+    //     read by SDL3Main.cpp's resolution block, which prefers it over the
+    //     screen-derived size. The engine needs height >= 600, so the
+    //     presets below all respect that.
+    //   Launch arguments -- one argument word per line in
+    //     <internal>/launch_args.cfg, appended to argv after -mod so a user
+    //     argument can override anything the launcher sets. Capped by the
+    //     native reader at 16 args; anything past that is ignored there.
+
+    private static final String PREF_LAUNCH_FIXED_RES = "launch_fixed_resolution";
+    private static final String LAUNCH_ARGS_CFG_NAME = "launch_args.cfg";
+
+    private static final String[] FIXED_RESOLUTIONS = {
+        "800x600", "1024x768", "1280x1024", "1600x1200",
+    };
+
+    private void buildLaunchOptionsSection(LinearLayout page) {
+        LinearLayout card = UiKit.card(page);
+        UiKit.sectionHeader(card, R.drawable.ic_gzh_sliders,
+            getString(R.string.setup_fixed_resolution), false);
+
+        CharSequence[] resLabels = new CharSequence[FIXED_RESOLUTIONS.length + 1];
+        resLabels[0] = getString(R.string.setup_fixed_resolution_off);
+        String current = getFixedResolution();
+        int checked = 0;
+        for (int i = 0; i < FIXED_RESOLUTIONS.length; i++) {
+            resLabels[i + 1] = FIXED_RESOLUTIONS[i];
+            if (FIXED_RESOLUTIONS[i].equals(current)) {
+                checked = i + 1;
+            }
+        }
+        UiKit.segmented(card, resLabels, checked, idx -> {
+            String choice = idx == 0 ? "" : FIXED_RESOLUTIONS[idx - 1];
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putString(PREF_LAUNCH_FIXED_RES, choice).apply();
+            writeFixedResolutionMarker(choice);
+        });
+        // Self-heal: prefs are the source of truth, the native-readable
+        // marker is derived — rebuild it if a previous write was interrupted.
+        writeFixedResolutionMarker(current);
+        UiKit.helpText(card, getString(R.string.setup_fixed_resolution_note));
+
+        LinearLayout argsCard = UiKit.card(page);
+        UiKit.sectionHeader(argsCard, R.drawable.ic_gzh_terminal,
+            getString(R.string.setup_launch_args_title), false);
+        launchArgsEdit = new EditText(this);
+        launchArgsEdit.setHint(R.string.setup_launch_args_hint);
+        launchArgsEdit.setInputType(InputType.TYPE_CLASS_TEXT
+            | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        launchArgsEdit.setMinLines(2);
+        launchArgsEdit.setMaxLines(6);
+        launchArgsEdit.setTextSize(15f);
+        launchArgsEdit.setGravity(Gravity.TOP | Gravity.START);
+        launchArgsEdit.setText(readLaunchArgsText());
+        argsCard.addView(launchArgsEdit, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        UiKit.button(argsCard, UiKit.BTN_TONAL, R.drawable.ic_gzh_save,
+            getString(R.string.setup_button_save), this::onSaveLaunchArgs);
+        UiKit.helpText(argsCard, getString(R.string.setup_launch_args_note));
+    }
+
+    private EditText launchArgsEdit;
+
+    /** Writes (or clears) the <internal>/fixed_resolution.cfg native marker. */
+    private void writeFixedResolutionMarker(String wxh) {
+        File marker = new File(getFilesDir(), "fixed_resolution.cfg");
+        if (wxh == null || wxh.isEmpty()) {
+            marker.delete();
+            return;
+        }
+        try (java.io.FileWriter w = new java.io.FileWriter(marker, false)) {
+            w.write(wxh);
+            w.write('\n');
+        } catch (java.io.IOException e) {
+            toast(String.valueOf(e));
+        }
+    }
+
+    /** "WxH" or "" (auto) — the exact contract SDL3Main.cpp parses. */
+    private String getFixedResolution() {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getString(PREF_LAUNCH_FIXED_RES, "");
+    }
+
+    private String readLaunchArgsText() {
+        File cfg = new File(getFilesDir(), LAUNCH_ARGS_CFG_NAME);
+        if (!cfg.isFile()) {
+            return "";
+        }
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(cfg))) {
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
+                    continue;
+                }
+                if (sb.length() > 0) {
+                    sb.append('\n');
+                }
+                sb.append(line.trim());
+            }
+            return sb.toString();
+        } catch (java.io.IOException e) {
+            return "";
+        }
+    }
+
+    private void onSaveLaunchArgs() {
+        String text = launchArgsEdit != null ? launchArgsEdit.getText().toString() : "";
+        File cfg = new File(getFilesDir(), LAUNCH_ARGS_CFG_NAME);
+        try (java.io.FileWriter w = new java.io.FileWriter(cfg, false)) {
+            int kept = 0;
+            for (String line : text.split("\\n")) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                    continue;
+                }
+                if (kept >= 16) {
+                    break; // matches SDL3Main.cpp's injection cap
+                }
+                w.write(trimmed);
+                w.write('\n');
+                kept++;
+            }
+        } catch (java.io.IOException e) {
+            toast(String.valueOf(e));
+            return;
+        }
+        toast(getString(R.string.setup_launch_args_saved));
     }
 
     private void buildLogsSection(LinearLayout page) {
