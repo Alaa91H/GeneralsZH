@@ -413,6 +413,40 @@ void installAndroidCrashHandler() {
 	}
 	fprintf(stderr, "[GX-BUILD] libmain.so compiled %s %s\n", __DATE__, __TIME__);
 	fflush(stderr);
+
+	// GeneralsX @feature Android port mod-launcher 15/09/2026 Crash
+	// breadcrumbs: if the launcher's mod manager has a mod selected
+	// (mod_launch.cfg, the same marker SDL3Main.cpp reads to inject -mod),
+	// record it in crash.log next to the build stamp. A crash report that
+	// says "was running mod X" answers the first question every triage
+	// asks -- mod bug vs. engine bug -- without needing the user to recall
+	// or re-test. Written at load time (not signal time) so it costs the
+	// handler nothing inside the async-signal-safe path.
+	{
+		int crumbUserId = (int)(getuid() / 100000);
+		char modCfgPath[256];
+		snprintf(modCfgPath, sizeof(modCfgPath),
+			"/data/user/%d/com.generalsx.zerohour/files/mod_launch.cfg", crumbUserId);
+		FILE *modCfg = fopen(modCfgPath, "r");
+		if (modCfg != nullptr) {
+			char modLine[512] = {0};
+			if (fgets(modLine, sizeof(modLine), modCfg) != nullptr) {
+				size_t mlen = strlen(modLine);
+				while (mlen > 0 && (modLine[mlen - 1] == '\n' || modLine[mlen - 1] == '\r')) {
+					modLine[--mlen] = '\0';
+				}
+				if (mlen > 0) {
+					char crumb[640];
+					int clen = snprintf(crumb, sizeof(crumb), "active mod: %s\n", modLine);
+					if (clen > 0) {
+						appendCrashLog(crumb,
+							(size_t)clen < sizeof(crumb) ? (size_t)clen : sizeof(crumb) - 1);
+					}
+				}
+			}
+			fclose(modCfg);
+		}
+	}
 }
 
 } // namespace

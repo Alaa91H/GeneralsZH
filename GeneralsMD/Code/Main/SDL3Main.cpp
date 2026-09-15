@@ -1328,28 +1328,57 @@ int main(int argc, char* argv[])
 				// over the window-derived one when present and parseable --
 				// falling back to the window size exactly as before otherwise
 				// (first launch, or a corrupt/missing file).
+				//
+				// GeneralsX @feature Android port launcher-options 15/09/2026
+				// Setup's "Fixed resolution" card sits above that: when the
+				// launcher wrote <internal>/fixed_resolution.cfg (one line,
+				// "WxH"), it wins over Options.ini too -- it is an explicit user
+				// choice made with knowledge of the Options override, and clearing
+				// it in Setup restores the Options.ini-then-window behavior.
+				bool fixedResApplied = false;
+#if defined(__ANDROID__)
 				{
-					const char *userDataDir = getenv("GENERALSX_USERDATA_DIR");
-					if (userDataDir) {
-						char optionsPath[512];
-						snprintf(optionsPath, sizeof(optionsPath), "%s/Options.ini", userDataDir);
-						FILE *fp = fopen(optionsPath, "r");
-						if (fp) {
-							char line[256];
-							while (fgets(line, sizeof(line), fp)) {
-								int savedX = 0, savedY = 0;
-								if (sscanf(line, " Resolution = %d %d", &savedX, &savedY) == 2 &&
-								    savedX > 0 && savedY > 0) {
-									xres = savedX & ~1;
-									yres = savedY;
-									fprintf(stderr, "INFO: using saved Resolution %dx%d from Options.ini instead of window size %dx%d\n",
-									        xres, yres, winW, winH);
-									break;
-								}
+					const char *fxInternal = SDL_GetAndroidInternalStoragePath();
+					if (fxInternal != nullptr) {
+						char fxPath[1024];
+						snprintf(fxPath, sizeof(fxPath), "%s/fixed_resolution.cfg", fxInternal);
+						FILE *fx = fopen(fxPath, "r");
+						if (fx != nullptr) {
+							int fxW = 0, fxH = 0;
+							if (fscanf(fx, "%dx%d", &fxW, &fxH) == 2 && fxW > 0 && fxH >= 600) {
+								xres = fxW & ~1;
+								yres = fxH;
+								fixedResApplied = true;
+								fprintf(stderr, "INFO: using Setup fixed resolution %dx%d (window %dx%d)\n",
+								        xres, yres, winW, winH);
 							}
-							fclose(fp);
+							fclose(fx);
 						}
 					}
+				}
+#endif
+				if (!fixedResApplied) {
+				const char *userDataDir = getenv("GENERALSX_USERDATA_DIR");
+				if (userDataDir) {
+					char optionsPath[512];
+					snprintf(optionsPath, sizeof(optionsPath), "%s/Options.ini", userDataDir);
+					FILE *fp = fopen(optionsPath, "r");
+					if (fp) {
+						char line[256];
+						while (fgets(line, sizeof(line), fp)) {
+							int savedX = 0, savedY = 0;
+							if (sscanf(line, " Resolution = %d %d", &savedX, &savedY) == 2 &&
+							    savedX > 0 && savedY > 0) {
+								xres = savedX & ~1;
+								yres = savedY;
+								fprintf(stderr, "INFO: using saved Resolution %dx%d from Options.ini instead of window size %dx%d\n",
+								        xres, yres, winW, winH);
+								break;
+							}
+						}
+						fclose(fp);
+					}
+				}
 				}
 
 				snprintf(xresVal, sizeof(xresVal), "%d", xres);
@@ -1435,6 +1464,58 @@ int main(int argc, char* argv[])
 						}
 					}
 					fclose(modCfg);
+				}
+			}
+		}
+
+		// GeneralsX @feature Android port launcher-options 15/09/2026
+		// User-added launch arguments from Setup's advanced box, one line
+		// per argument word, written by SetupActivity.writeLaunchArgsCfg().
+		// Injected the same way as -mod above, after it, so a user arg can
+		// override anything the launcher set (parseCommandLine lets later
+		// arguments win). Comments (#) and blank lines are skipped, the cap
+		// bounds the whole file, and the argv slots are static so the storage
+		// outlives GameMain(). A malformed file degrades to a vanilla launch
+		// minus its extras -- never a crash.
+		{
+			const char *argsInternalPath = SDL_GetAndroidInternalStoragePath();
+			if (argsInternalPath != nullptr) {
+				char argsCfgPath[1024];
+				snprintf(argsCfgPath, sizeof(argsCfgPath), "%s/launch_args.cfg", argsInternalPath);
+				FILE *argsCfg = fopen(argsCfgPath, "r");
+				if (argsCfg != nullptr) {
+					static char argStore[16][128];
+					static char *argPtrs[16];
+					int argCount = 0;
+					char line[128];
+					while (argCount < 16 && fgets(line, sizeof(line), argsCfg) != nullptr) {
+						size_t llen = strlen(line);
+						while (llen > 0 && (line[llen - 1] == '\n' || line[llen - 1] == '\r')) {
+							line[--llen] = '\0';
+						}
+						if (llen == 0 || line[0] == '#') {
+							continue;
+						}
+						strncpy(argStore[argCount], line, sizeof(argStore[0]) - 1);
+						argStore[argCount][sizeof(argStore[0]) - 1] = '\0';
+						argPtrs[argCount] = argStore[argCount];
+						++argCount;
+					}
+					fclose(argsCfg);
+					if (argCount > 0) {
+						static char *newArgv[96];
+						int n = 0;
+						for (int i = 0; i < __argc && n < 79; ++i) {
+							newArgv[n++] = __argv[i];
+						}
+						for (int a = 0; a < argCount && n < 95; ++a) {
+							newArgv[n++] = argPtrs[a];
+						}
+						newArgv[n] = nullptr;
+						__argv = newArgv;
+						__argc = n;
+						fprintf(stderr, "INFO: injected %d user launch argument(s)\n", argCount);
+					}
 				}
 			}
 		}
