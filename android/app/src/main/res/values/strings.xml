@@ -287,6 +287,11 @@
     <string name="mods_importing_folder">Copying extracted mod folder…</string>
     <string name="mods_import_folder">Add extracted mod folder</string>
     <string name="mods_downloads_short">downloads</string>
+    <string name="mods_browse_genlauncher">GenLauncher repository</string>
+    <string name="mods_repo_title">Curated mods (%1$d)</string>
+    <string name="mods_repo_hint">The curated GenLauncher repository (Rise of the Reds, Contra, Shockwave…). Large mods download as individual files — no archive staging copy needed.</string>
+    <string name="mods_repo_resolving">Resolving %1$s…</string>
+    <string name="mods_repo_unavailable">%1$s has no downloadable release in the repository right now.</string>
     <string name="mods_votes_format">%1$s votes</string>
     <string name="mods_rank_format">Rank %1$s</string>
     <string name="mods_watchers_format">%1$s watching</string>

@@ -7,8 +7,62 @@ and the project versions per [Semantic Versioning](https://semver.org/):
 
 ## [Unreleased]
 
+### Added
+
+- **GenLauncher repository source in the Mods tab** — the curated
+  [GenLauncherModsData](https://github.com/p0ls3r/GenLauncherModsData)
+  manifest (Rise of the Reds, Contra, The End of Days, Shockwave, …26 mods)
+  now browses and installs alongside ModDB. Versions resolve from each mod's
+  own `GenLauncherData.yaml`; mods that ship S3 storage (MinIO at
+  gen.insave.ovh:9000) stream as individual `.big` files straight into
+  `Mods/<Mod>/<Version>/` with resumable per-object progress — verified
+  on-device by downloading and running Contra 10.0.2 Beta 2 Patch 1
+  (2.1 GB in ~2 min at 17 MB/s). The archive path (`SimpleDownloadLink`)
+  remains the fallback for mods without S3 storage.
+
+- **Second home-screen icon restored** — the game-settings icon
+  (`SetupShortcutActivity`, a plain trampoline that never touches SDL)
+  is back next to the game icon; it opens Setup directly with none of the
+  unconfigured-device crash risk that motivated the original removal
+  (SetupActivity stays un-exported; the trampoline is the only entry).
+
+- **Page transitions** — horizontal slide between the Home and Mods tabs,
+  fade for the settings screen (snapshot-based, snapshot discarded on
+  interruption); Back from settings returns to the originating tab.
+
 ### Fixed
 
+- **Every archive install failed with "unsupported archive type"** —
+  downloads staged as `<name>.part` (no extension) but `extract()`
+  dispatches on the file name. The staged file is now sniffed (PK / Rar!
+  / 7z / BIGF magic) and renamed to match before extraction.
+
+- **GenLauncher installs preferred the RAR5 archive over working S3
+  files** — mods that ship both (Contra) downloaded a 1 GB RAR the
+  built-in extractor cannot open (`UnsupportedRarV5Exception`). The S3
+  listing is now always attempted first; the archive is a fallback only
+  when a mod has no S3 storage.
+
+- **The GenLauncher MinIO endpoint 403'd over HTTPS** — verified the
+  real storage serves plain HTTP on :9000 (the :443 front rejects object
+  traffic); S3 listing/downloads moved there and cleartext is permitted
+  for that host only in `network_security_config`.
+
+- **WebView TLS failures on filtered networks (`net_error -202`)** —
+  user-installed CAs are now trusted for WebView (same footing as the
+  browser), and the visible-challenge flow no longer reports success on
+  a TLS error page: it requires real ModDB content.
+
+- **Mods detail screen was not scrollable** — the embedded (bottom-tab)
+  panel built its page without a ScrollView, clipping long mod details;
+  the page always scrolls now.
+
+- **Setup screen duplicated Home's options** — the graphics/backend and
+  launch-args sections moved to Home in the two-tab layout but were left
+  behind in Setup; removed there (language, text size, logs,
+  diagnostics, help, updates only).
+
+### Fixed
 - **Infinite rebuild loop in the Mods panel** (critical) — mod families
   installed from storage (no ModDB origin) were skipped by the automatic
   update check without recording a verdict, leaving `updateByGroup` empty,

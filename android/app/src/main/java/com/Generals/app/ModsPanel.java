@@ -67,6 +67,7 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -124,6 +125,16 @@ final class ModsPanel extends LinearLayout {
     private ModDbClient.ModSummary detailMod;
     private ModDbClient.ModDetails detailData;
     private List<ModDbClient.ModFile> detailFiles;
+
+    // GeneralsX @feature 17/09/2026 GenLauncher repository source: the
+    // curated manifest (github.com/p0ls3r/GenLauncherModsData) plus the
+    // resolved version of the mod currently being installed from it.
+    private static final int SOURCE_MODDB = 0;
+    private static final int SOURCE_GENLAUNCHER = 1;
+    private int browseSource = SOURCE_MODDB;
+    private List<GenLauncherReposClient.RepoMod> repoMods;
+    private GenLauncherReposClient.RepoVersion installingRepoVersion;
+    private String installingRepoName;
 
     // Install context, kept so a failed install can offer resumable retry.
     private ModDbClient.ModSummary installMod;
@@ -212,7 +223,7 @@ final class ModsPanel extends LinearLayout {
         removeAllViews();
 
         Activity activity = host.activity();
-        LinearLayout page = this;
+        LinearLayout page;
         if (withAppBar) {
             setBackgroundColor(UiKit.color(activity, R.color.gen_background));
             InsetUtil.applySafeInsets(this);
@@ -220,6 +231,15 @@ final class ModsPanel extends LinearLayout {
                 activity.getString(R.string.mods_window_title),
                 R.drawable.ic_gen_refresh, activity.getString(R.string.mods_refresh),
                 this::onRefresh);
+            page = UiKit.scrollingPage(this);
+        } else {
+            // GeneralsX @bugfix Android port launcher-ui 17/09/2026 Embedded
+            // mode used to build directly into the panel (a plain
+            // LinearLayout), which worked while Setup wrapped us in its own
+            // scroller. Since the panel became a full-height bottom tab (a
+            // direct MATCH_PARENT child of contentHost) the detail/files
+            // screens overflowed with no way to scroll. Wrap the content in
+            // the standard scrolling page in every mode.
             page = UiKit.scrollingPage(this);
         }
 
@@ -249,7 +269,9 @@ final class ModsPanel extends LinearLayout {
         switch (screen) {
             case SCREEN_BROWSE:
                 buildBrowseSearch();
-                if (results.isEmpty() && lastQuery != null) {
+                if (browseSource == SOURCE_GENLAUNCHER && repoMods != null) {
+                    renderRepoMods();
+                } else if (results.isEmpty() && lastQuery != null) {
                     runBrowse(lastQuery);
                 }
                 break;
@@ -866,7 +888,18 @@ final class ModsPanel extends LinearLayout {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_refresh,
-            activity.getString(R.string.mods_show_all), () -> runBrowse(null));
+            activity.getString(R.string.mods_show_all), () -> {
+                browseSource = SOURCE_MODDB;
+                runBrowse(null);
+            });
+        // GenLauncher repository: the curated manifest (Rise of the Reds,
+        // Contra, Shockwave…) with S3 individual-file downloads. One tap
+        // opens the list; a second tap on a mod installs its latest.
+        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_chip,
+            activity.getString(R.string.mods_browse_genlauncher), () -> {
+                browseSource = SOURCE_GENLAUNCHER;
+                runRepoBrowse();
+            });
 
         // Sort row: persists across sessions, applies to whatever is shown.
         UiKit.caption(card, activity.getString(R.string.mods_sort_label));
@@ -884,6 +917,219 @@ final class ModsPanel extends LinearLayout {
                 renderSummaries();
             }
         });
+    }
+
+    // ------------------------------------------------- GenLauncher repository
+
+    /**
+     * Fetches the curated GenLauncher manifest on a worker thread and shows
+     * its mod list. The list itself is cheap (one GET); each mod's own YAML
+     * is only fetched when the user taps it, so opening the repository is
+     * instant and offline-friendly once cached.
+     */
+    private void runRepoBrowse() {
+        Activity activity = host.activity();
+        showStatus(activity.getString(R.string.mods_loading));
+        listHost.removeAllViews();
+        LinearLayout loading = UiKit.card(listHost);
+        UiKit.supporting(loading, activity.getString(R.string.mods_loading));
+        new Thread(() -> {
+            List<GenLauncherReposClient.RepoMod> fetched = null;
+            String error = null;
+            try {
+                if (repoMods == null) {
+                    repoMods = GenLauncherReposClient.fetchRepoMods();
+                }
+                fetched = repoMods;
+            } catch (Exception e) {
+                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
+            }
+            final List<GenLauncherReposClient.RepoMod> finalList = fetched;
+            final String finalError = error;
+            activity.runOnUiThread(() -> {
+                hideStatus();
+                if (!isFinishingSafe()) {
+                    if (finalError != null) {
+                        renderError(activity.getString(R.string.mods_err_fetch, finalError), true);
+                    } else if (finalList != null) {
+                        renderRepoMods();
+                    }
+                }
+            });
+        }, "gx-genlauncher-repos").start();
+    }
+
+    /** Renders the curated repository list: name rows, tap = install. */
+    private void renderRepoMods() {
+        Activity activity = host.activity();
+        listHost.removeAllViews();
+        LinearLayout card = UiKit.card(listHost);
+        UiKit.sectionHeader(card, R.drawable.ic_gen_chip,
+            activity.getString(R.string.mods_repo_title,
+                repoMods != null ? repoMods.size() : 0), false);
+        UiKit.supporting(card, activity.getString(R.string.mods_repo_hint));
+        if (repoMods == null || repoMods.isEmpty()) {
+            UiKit.supporting(card, activity.getString(R.string.mods_no_results));
+            return;
+        }
+        for (GenLauncherReposClient.RepoMod mod : repoMods) {
+            LinearLayout row = new LinearLayout(activity);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setClickable(true);
+            row.setFocusable(true);
+            int pad = UiKit.dp(activity, 10f);
+            row.setPadding(pad, pad, pad, pad);
+            GradientBg.apply(row);
+            TextView name = new TextView(activity);
+            name.setText(mod.name);
+            name.setTextSize(15f);
+            name.setTextColor(UiKit.color(activity, R.color.gen_on_surface));
+            row.addView(name, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            TextView arrow = new TextView(activity);
+            arrow.setText("\u2193");
+            arrow.setTextColor(UiKit.color(activity, R.color.gen_primary));
+            row.addView(arrow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+            row.setOnClickListener(v -> installRepoMod(mod));
+            card.addView(row, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        }
+    }
+
+    /**
+     * Resolves one repository mod's manifest and starts the download. Both
+     * GenLauncher shapes are supported: a SimpleDownloadLink archive goes
+     * through the same download+extract pipeline as ModDB files; an S3
+     * folder streams its .big objects straight into the version folder with
+     * no staging copy (the desktop launcher's per-file model).
+     */
+    private void installRepoMod(GenLauncherReposClient.RepoMod mod) {
+        Activity activity = host.activity();
+        if (gameFolder == null) {
+            toast(activity.getString(R.string.mods_no_game_folder));
+            return;
+        }
+        showStatus(activity.getString(R.string.mods_repo_resolving, mod.name));
+        new Thread(() -> {
+            GenLauncherReposClient.RepoVersion version = null;
+            String error = null;
+            try {
+                version = GenLauncherReposClient.fetchVersion(mod);
+                if (version.isDownloadable()) {
+                    // Always try the S3 listing first (no-op when the mod
+                    // declares no S3 storage): mods like Contra ship BOTH a
+                    // SimpleDownloadLink archive and S3 individual files, and
+                    // the archive is frequently RAR5, which the built-in
+                    // extractor cannot open. S3 files are the reliable path.
+                    GenLauncherReposClient.fillS3Objects(version);
+                }
+            } catch (Exception e) {
+                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
+            }
+            final GenLauncherReposClient.RepoVersion finalVersion = version;
+            final String finalError = error;
+            activity.runOnUiThread(() -> {
+                hideStatus();
+                if (!isFinishingSafe()) {
+                    if (finalError != null) {
+                        renderError(activity.getString(R.string.mods_err_fetch, finalError), true);
+                    } else if (finalVersion == null || !finalVersion.isDownloadable()) {
+                        toast(activity.getString(R.string.mods_repo_unavailable, mod.name));
+                    } else {
+                        installingRepoVersion = finalVersion;
+                        installingRepoName = finalVersion.name != null
+                            ? finalVersion.name : mod.name;
+                        startRepoInstall();
+                    }
+                }
+            });
+        }, "gx-repos-resolve").start();
+    }
+
+    /** Installs the resolved repository version (archive or S3 folder). */
+    private void startRepoInstall() {
+        Activity activity = host.activity();
+        final GenLauncherReposClient.RepoVersion v = installingRepoVersion;
+        final String modName = installingRepoName;
+        final ModInstaller.Listener listener = makeInstallListener();
+        long total = 0;
+        for (GenLauncherReposClient.S3Object o : v.s3Objects) {
+            total += o.size;
+        }
+        final long totalBytes = total;
+        if (ModInstaller.freeBytes(gameFolder) < Math.max(512L * 1024 * 1024, totalBytes)) {
+            new android.app.AlertDialog.Builder(activity)
+                    .setTitle(activity.getString(R.string.mods_err_title))
+                    .setMessage(activity.getString(R.string.mods_err_low_storage,
+                        humanBytes(ModInstaller.freeBytes(gameFolder))))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
+        }
+        showInstallCard(modName + " " + v.version);
+        new Thread(() -> {
+            String error = null;
+            try {
+                // S3 individual files take priority (GenLauncher's model):
+                // no archive staging copy, resumable per object. The
+                // SimpleDownloadLink archive is the fallback for mods that
+                // do not ship an S3 folder.
+                if (!v.s3Objects.isEmpty()) {
+                    File fileDir = ModInstaller.prepareVersionDir(
+                        gameFolder, modName, v.version);
+                    int count = 0;
+                    long[] done = {0};
+                    for (GenLauncherReposClient.S3Object o : v.s3Objects) {
+                        String fileName = o.key.substring(o.key.lastIndexOf('/') + 1);
+                        if (fileName.isEmpty()) {
+                            continue;
+                        }
+                        listener.onPhase(fileName);
+                        listener.onProgress(done[0], totalBytes);
+                        ModInstaller.streamToFolder(
+                            GenLauncherReposClient.s3ObjectUrl(v, o),
+                            new File(fileDir, fileName),
+                            o.size,
+                            (delta) -> listener.onProgress(done[0] + delta, totalBytes));
+                        done[0] += o.size;
+                        count++;
+                    }
+                    if (count == 0) {
+                        throw new IOException("no files in this mod's storage");
+                    }
+                    ModInstaller.writeMeta(fileDir, null);
+                } else {
+                    File installed = ModInstaller.downloadAndInstall(
+                        v.simpleDownloadLink, gameFolder, modName,
+                        fileBaseName(modName), listener);
+                    if (installed != null) {
+                        ModInstaller.flattenSingleVersion(installed.getParentFile());
+                    }
+                }
+            } catch (Exception e) {
+                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
+            }
+            final String finalError = error;
+            activity.runOnUiThread(() -> {
+                if (statusBar != null) {
+                    statusBar.setVisibility(View.GONE);
+                }
+                if (!isFinishingSafe()) {
+                    if (finalError != null) {
+                        offerInstallRetry(finalError);
+                        return;
+                    }
+                    toast(activity.getString(R.string.mods_install_done, modName));
+                    screen = SCREEN_INSTALLED;
+                    saveBrowsePrefs();
+                    rebuild();
+                }
+            });
+        }, "gx-repos-install").start();
     }
 
     private void sortResults() {

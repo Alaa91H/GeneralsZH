@@ -130,6 +130,25 @@ final class WebViewFetch {
                             }
 
                             @Override
+                            public void onReceivedSslError(WebView wv2,
+                                    android.webkit.SslErrorHandler handler,
+                                    android.net.http.SslError error) {
+                                // Same TLS-intercepting-network accommodation as
+                                // the visible challenge: proceed for ModDB/its
+                                // challenge CDN only, cancel everywhere else.
+                                String host = error.getUrl() != null
+                                    ? android.net.Uri.parse(error.getUrl()).getHost() : null;
+                                if (host != null && (host.equals("www.moddb.com")
+                                        || host.endsWith(".moddb.com")
+                                        || host.endsWith("challenges.cloudflare.com")
+                                        || host.endsWith("cloudflare.com"))) {
+                                    handler.proceed();
+                                } else {
+                                    handler.cancel();
+                                }
+                            }
+
+                            @Override
                             public void onPageFinished(WebView v, String u) {
                                 android.util.Log.i(TAG, "webview onPageFinished: " + u);
                                 // The challenge page itself finishes loading

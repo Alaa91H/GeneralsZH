@@ -7,8 +7,13 @@ user-installed filtering/proxy CA (observed on the test device: Chrome opens
 ModDB fine while every WebView connection dies with net_error -202
 "Trust anchor not found", because WebView only trusts system CAs since
 Android 7). Trusting user-added CAs here puts WebView on the same footing
-as the browser the user already trusts on this device. Cleartext stays
-forbidden; the direct HTTPS client is unaffected by this config.
+as the browser the user already trusts on this device. The direct HTTPS
+client is unaffected by this config.
+
+Cleartext is permitted ONLY for the GenLauncher mod-repository storage
+(gen.insave.ovh:9000): verified on-device 17/09/2026, that MinIO endpoint
+serves plain HTTP only — the :443 front rejects object traffic with 403.
+Everything else keeps cleartext forbidden.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
@@ -17,4 +22,7 @@ forbidden; the direct HTTPS client is unaffected by this config.
             <certificates src="user" />
         </trust-anchors>
     </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">gen.insave.ovh</domain>
+    </domain-config>
 </network-security-config>

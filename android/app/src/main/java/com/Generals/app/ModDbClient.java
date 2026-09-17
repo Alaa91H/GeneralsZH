@@ -292,15 +292,13 @@ final class ModDbClient {
                 s_lastPageFetchMs = System.currentTimeMillis();
             }
             if (status < 200 || status >= 300) {
-                // 403 with a desktop UA on a device whose Private DNS is an
-                // ad-blocker (observed: dns.adguard.com NXDOMAINs
-                // addons.moddb.com / image.moddb.com, which the Cloudflare
-                // challenge and ModDB assets need, while www resolves) reads
-                // as bot-verdict at the edge. Surface the actionable cause.
-                if (status == 403 && privateDnsBlocksModDb()) {
-                    throw new IOException("HTTP 403 — this device's Private DNS ("
-                        + privateDnsName() + ") blocks ModDB's domains; "
-                        + "set Private DNS to Automatic in system settings");
+                // 403 with a desktop UA reads as a bot verdict at the edge.
+                // On this test network the fix was the visible challenge
+                // (cf_clearance); name it instead of a bare code.
+                if (status == 403) {
+                    throw new IOException("HTTP 403 — ModDB is asking this "
+                        + "network for human verification; tap retry and "
+                        + "complete the one-time check");
                 }
                 throw new IOException("HTTP " + status);
             }
@@ -326,47 +324,6 @@ final class ModDbClient {
             if (conn != null) {
                 conn.disconnect();
             }
-        }
-    }
-
-    /**
-     * True when the device's DNS cannot resolve ModDB's asset/challenge
-     * domains. With an ad-blocking Private DNS (observed on the test
-     * device: dns.adguard.com), www.moddb.com resolves but
-     * addons./image.moddb.com return NXDOMAIN — the Cloudflare challenge
-     * then never loads its scripts, every WebView pass fails, and the
-     * edge answers the direct client 403. Detection is a pure resolver
-     * probe: cheap, no network fetch of any page.
-     */
-    private static boolean privateDnsBlocksModDb() {
-        String[] required = {"addons.moddb.com", "image.moddb.com"};
-        for (String host : required) {
-            try {
-                if (java.net.InetAddress.getAllByName(host).length == 0) {
-                    return true;
-                }
-            } catch (java.net.UnknownHostException e) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** The configured Private DNS hostname, for the user-facing message. */
-    private static String privateDnsName() {
-        try {
-            Activity host = s_hostActivity;
-            if (host == null) {
-                return "resolver";
-            }
-            // "private_dns_specifier" is the Settings.Global key for the
-            // Private DNS hostname; the constant itself is hidden API, the
-            // lookup through the public getString is not.
-            String name = android.provider.Settings.Global.getString(
-                host.getContentResolver(), "private_dns_specifier");
-            return name != null && !name.isEmpty() ? name : "resolver";
-        } catch (Exception e) {
-            return "resolver";
         }
     }
 

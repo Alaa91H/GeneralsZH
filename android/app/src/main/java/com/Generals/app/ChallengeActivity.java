@@ -122,6 +122,29 @@ public class ChallengeActivity extends Activity {
             }
 
             @Override
+            public void onReceivedSslError(WebView v, android.webkit.SslErrorHandler handler,
+                                           android.net.http.SslError error) {
+                // GeneralsX @bugfix Android port launcher-ui 17/09/2026 On the
+                // test network (a router-level AdGuard that intercepts TLS)
+                // Chrome browses ModDB fine while WebView dies with
+                // net_error -202 BEFORE the challenge even renders —
+                // networkSecurityConfig does not reach chromium's trust store.
+                // Proceed only for the host we opened this browser for and
+                // its CDN: the alternative is the feature being unusable on
+                // any TLS-intercepting home network.
+                String host = error.getUrl() != null
+                    ? android.net.Uri.parse(error.getUrl()).getHost() : null;
+                if (host != null && (host.equals("www.moddb.com")
+                        || host.endsWith(".moddb.com")
+                        || host.endsWith("challenges.cloudflare.com")
+                        || host.endsWith("cloudflare.com"))) {
+                    handler.proceed();
+                } else {
+                    handler.cancel();
+                }
+            }
+
+            @Override
             public void onPageFinished(WebView v, String u) {
                 checkCleared(v);
             }

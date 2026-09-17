@@ -276,6 +276,11 @@
     <string name="mods_importing_folder">جارٍ نسخ مجلد المود…</string>
     <string name="mods_import_folder">إضافة مجلد مود مفكوك</string>
     <string name="mods_downloads_short">تحميل</string>
+    <string name="mods_browse_genlauncher">مستودع GenLauncher</string>
+    <string name="mods_repo_title">مودات مختارة (%1$d)</string>
+    <string name="mods_repo_hint">مستودع GenLauncher المختار (Rise of the Reds، Contra، Shockwave…). المودات الضخمة تُنزّل كملفات مفردة — بلا نسخة مؤقتة مضاعفة.</string>
+    <string name="mods_repo_resolving">جارٍ تحليل %1$s…</string>
+    <string name="mods_repo_unavailable">لا يوجد إصدار قابل للتنزيل لـ %1$s في المستودع حاليًا.</string>
     <string name="mods_votes_format">%1$s تقييم</string>
     <string name="mods_rank_format">الترتيب %1$s</string>
     <string name="mods_watchers_format">%1$s متابع</string>

@@ -148,6 +148,26 @@
             android:theme="@style/Theme.Generals"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- GeneralsX @feature Android port launcher-icons 17/09/2026 Second
+             home-screen icon (game settings), restored after the 15/09/2026
+             collapse to a single entry. Points at a plain trampoline that
+             forwards to SetupActivity, so the old "LAUNCHER intent enters
+             SetupActivity directly and crashes on unconfigured devices"
+             failure mode cannot recur: the trampoline never touches SDL, and
+             SetupActivity itself stays un-exported (adb/other apps cannot
+             bypass the trampoline). -->
+        <activity
+            android:name=".SetupShortcutActivity"
+            android:exported="true"
+            android:label="@string/setup_window_title"
+            android:icon="@mipmap/ic_launcher_setup"
+            android:theme="@style/Theme.Generals">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <!-- GeneralsX @feature Android port mod-launcher 14/09/2026 The mod
              manager: browse/install ModDB mods, pick which one -mod launches
              with, delete without touching game data. -->

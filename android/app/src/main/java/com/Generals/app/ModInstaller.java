@@ -51,7 +51,9 @@ import com.github.junrar.rarfile.FileHeader;
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
 import org.apache.commons.compress.archivers.sevenz.SevenZFile;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -59,6 +61,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
@@ -322,12 +325,17 @@ final class ModInstaller {
                                    Listener listener) throws Exception {
         File fileDir = prepareFileDir(gameFolder, modName, fileBaseName);
         File tmp = new File(fileDir.getParentFile(), fileBaseName + ".part");
+        File staged = null;
         try {
             downloadResumable(url, tmp, listener);
             if (listener != null) {
                 listener.onPhase("extracting");
             }
-            int count = extract(tmp, fileDir, listener);
+            // The temp name carries no archive extension, and ModDB/repo URLs
+            // do not reliably end in one either — sniff the file magic and
+            // stage it under a name extract() recognizes.
+            staged = ensureKnownArchiveExtension(tmp);
+            int count = extract(staged, fileDir, listener);
             if (count == 0) {
                 throw new IOException("no .big archives found in this download");
             }
@@ -336,6 +344,59 @@ final class ModInstaller {
             return fileDir;
         } finally {
             tmp.delete();
+            if (staged != null && !staged.equals(tmp)) {
+                staged.delete();
+            }
+        }
+    }
+
+    /**
+     * GeneralsX @bugfix 17/09/2026 extract() dispatches on the file name, but
+     * the download temp is "<base>.part" with no extension — every archive
+     * install failed with "unsupported archive type". Sniff the magic bytes
+     * (PK zip / Rar! / 7z / BIGF) and rename the temp to match. Unknown
+     * content still fails, now with the real reason.
+     */
+    private static File ensureKnownArchiveExtension(File f) throws IOException {
+        String name = f.getName().toLowerCase(Locale.US);
+        if (name.endsWith(".zip") || name.endsWith(".rar")
+                || name.endsWith(".7z") || name.endsWith(".big")) {
+            return f;
+        }
+        String ext = sniffArchiveExtension(f);
+        if (ext == null) {
+            throw new IOException("unsupported archive type: " + f.getName());
+        }
+        File renamed = new File(f.getParentFile(), f.getName() + ext);
+        if (!f.renameTo(renamed)) {
+            throw new IOException("could not stage download for extraction");
+        }
+        return renamed;
+    }
+
+    private static String sniffArchiveExtension(File f) throws IOException {
+        try (DataInputStream in = new DataInputStream(
+                 new BufferedInputStream(new FileInputStream(f)))) {
+            byte[] b = new byte[8];
+            int n = in.read(b);
+            if (n < 4) {
+                return null;
+            }
+            if (b[0] == 'P' && b[1] == 'K'
+                    && (b[2] == 3 || b[2] == 5 || b[2] == 7)) {
+                return ".zip";
+            }
+            if (b[0] == 'R' && b[1] == 'a' && b[2] == 'r' && b[3] == '!') {
+                return ".rar";
+            }
+            if ((b[0] & 0xFF) == 0x37 && b[1] == 'z'
+                    && (b[2] & 0xFF) == 0xBC && (b[3] & 0xFF) == 0xAF) {
+                return ".7z";
+            }
+            if (b[0] == 'B' && b[1] == 'I' && b[2] == 'G' && b[3] == 'F') {
+                return ".big";
+            }
+            return null;
         }
     }
 
@@ -537,6 +598,85 @@ final class ModInstaller {
             throw new IOException("cannot create " + fileDir);
         }
         return fileDir;
+    }
+
+    /**
+     * GeneralsX @feature 17/09/2026 Version folder for a GenLauncher
+     * repository install: Mods/<Mod>/<Version>/ with .big files streamed in
+     * individually (no archive to stage). Unlike prepareFileDir the version
+     * folder is kept when it already exists — files that match on size are
+     * the update-skip case, not a re-download trigger.
+     */
+    static File prepareVersionDir(String gameFolder, String modName,
+                                  String version) throws IOException {
+        File modsRoot = modsRoot(gameFolder);
+        if (!modsRoot.isDirectory() && !modsRoot.mkdirs()) {
+            throw new IOException("cannot create " + modsRoot);
+        }
+        File modDir = safeDir(modsRoot, modName);
+        File versionDir = safeDir(modDir, version);
+        if (!versionDir.isDirectory() && !versionDir.mkdirs()) {
+            throw new IOException("cannot create " + versionDir);
+        }
+        return versionDir;
+    }
+
+    /**
+     * GeneralsX @feature 17/09/2026 Streams one remote object into a file
+     * inside the mod folder, reporting incremental progress through
+     * {@code onBytes}. Used by the GenLauncher S3 path where the mod ships
+     * as individual .big objects — no archive staging copy is ever made.
+     * An existing file of the exact expected size is kept (resume across
+     * app restarts) instead of being re-downloaded.
+     */
+    interface ByteProgress {
+        void onBytes(long delta);
+    }
+
+    static void streamToFolder(String url, File dest, long expectedSize,
+                               ByteProgress progress) throws IOException {
+        if (dest.isFile() && expectedSize > 0 && dest.length() == expectedSize) {
+            progress.onBytes(expectedSize);
+            return; // already complete from an earlier attempt
+        }
+        File partial = new File(dest.getParentFile(), dest.getName() + ".dl");
+        long have = partial.isFile() ? partial.length() : 0;
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setConnectTimeout(15000);
+            conn.setReadTimeout(30000);
+            conn.setRequestProperty("User-Agent", ModDbClient.USER_AGENT);
+            if (have > 0) {
+                conn.setRequestProperty("Range", "bytes=" + have + "-");
+            }
+            int status = conn.getResponseCode();
+            if (have > 0 && status == 200) {
+                have = 0; // server ignored Range; restart this object
+                partial.delete();
+            } else if (status != 206 && status != 200) {
+                throw new IOException("HTTP " + status + " for " + url);
+            }
+            try (java.io.InputStream in = conn.getInputStream();
+                 java.io.FileOutputStream out = new java.io.FileOutputStream(
+                     partial, have > 0)) {
+                byte[] buf = new byte[64 * 1024];
+                long total = have;
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    total += n;
+                    progress.onBytes(n);
+                }
+            }
+            if (!partial.renameTo(dest)) {
+                throw new IOException("could not finalize " + dest.getName());
+            }
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
     }
 
     static void deleteRecursively(File f) {

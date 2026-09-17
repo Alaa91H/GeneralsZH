@@ -51,9 +51,19 @@ import android.text.style.UnderlineSpan;
 import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.View;
+// GeneralsX @feature Android port launcher-ui 17/09/2026 Animated tab
+// transitions: a horizontal slide between the two bottom tabs (direction
+// follows which side the target tab sits on, RTL-aware) and a fade for the
+// settings page, which is a top-level overlay rather than a "next" tab.
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -471,6 +481,11 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
      * updated.
      */
     private void showTab(int tab) {
+        final int fromTab = currentTab;
+        // Snapshot the outgoing page before it is torn down so the
+        // transition can animate it alongside the new one.
+        android.graphics.Bitmap outgoingShot =
+            capturePageSnapshot(fromTab, tab);
         currentTab = tab;
         if (contentHost == null) {
             return;  // the plain-widget fallback UI is up; there are no tabs
@@ -538,6 +553,107 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         refreshGeneralsOnlineStatus();
         loadDxvkConfigIntoEditor();
         refreshDiagnosticsSwitches();
+        playTabTransition(fromTab, tab, outgoingShot);
+    }
+
+    /**
+     * GeneralsX @feature Android port launcher-ui 17/09/2026 Animated page
+     * transitions, GenLauncher-style polish. Bottom tabs slide horizontally
+     * (direction follows the tab order, mirrored under RTL); the settings
+     * overlay fades. The outgoing page is snapshotted into an ImageView so
+     * old and new can animate as siblings — the pages rebuild from scratch
+     * on every switch anyway, so the bitmap keeps this cheap and it works
+     * with the existing build-then-swap flow in showTab().
+     */
+    private void playTabTransition(int fromTab, int toTab,
+            android.graphics.Bitmap outgoingShot) {
+        if (contentHost == null || fromTab == toTab || outgoingShot == null
+                || contentHost.getChildCount() == 0) {
+            return; // first build: nothing to animate from
+        }
+        final View incoming = contentHost.getChildAt(0);
+        ImageView ghost = new ImageView(this);
+        ghost.setImageBitmap(outgoingShot);
+        ghost.setScaleType(ImageView.ScaleType.FIT_XY);
+        contentHost.addView(ghost, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT));
+        final float w = contentHost.getWidth();
+        final DecelerateInterpolator interp = new DecelerateInterpolator(1.4f);
+        final long dur = 230;
+
+        if (toTab == TAB_SETTINGS) {
+            // Overlay: the new page fades in over the old snapshot.
+            incoming.setAlpha(0f);
+            ObjectAnimator a = ObjectAnimator.ofFloat(incoming, View.ALPHA, 0f, 1f);
+            a.setDuration(dur); a.setInterpolator(interp); a.start();
+            animateOut(ghost, false, 0f, interp, dur);
+        } else if (fromTab == TAB_SETTINGS) {
+            // Leaving settings: its snapshot fades out revealing the tab.
+            animateOut(ghost, false, 0f, interp, dur);
+        } else {
+            // Bottom tabs home <-> mods: slide, mirrored for RTL.
+            boolean rtl = getResources().getConfiguration().getLayoutDirection()
+                == View.LAYOUT_DIRECTION_RTL;
+            boolean forward = (toTab == TAB_MODS) != rtl;
+            float dir = forward ? -1f : 1f;
+            incoming.setTranslationX(-dir * w * 0.25f);
+            incoming.setAlpha(0f);
+            ObjectAnimator inX = ObjectAnimator.ofFloat(incoming,
+                View.TRANSLATION_X, -dir * w * 0.25f, 0f);
+            ObjectAnimator inA = ObjectAnimator.ofFloat(incoming, View.ALPHA, 0f, 1f);
+            AnimatorSet in = new AnimatorSet();
+            in.playTogether(inX, inA);
+            in.setDuration(dur); in.setInterpolator(interp); in.start();
+            animateOut(ghost, true, dir, interp, dur);
+        }
+    }
+
+    /** Slides (or fades) the ghost snapshot out, then removes and recycles it. */
+    private void animateOut(ImageView ghost, boolean slide, float dir,
+            DecelerateInterpolator interp, long dur) {
+        AnimatorSet out = new AnimatorSet();
+        if (slide) {
+            ObjectAnimator aX = ObjectAnimator.ofFloat(ghost, View.TRANSLATION_X,
+                0f, dir * contentHost.getWidth() * 0.4f);
+            ObjectAnimator aA = ObjectAnimator.ofFloat(ghost, View.ALPHA, 1f, 0f);
+            out.playTogether(aX, aA);
+        } else {
+            out.playTogether(ObjectAnimator.ofFloat(ghost, View.ALPHA, 1f, 0f));
+        }
+        out.setDuration(dur); out.setInterpolator(interp);
+        out.addListener(new AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(Animator a) {
+                contentHost.removeView(ghost);
+                ghost.setImageDrawable(null);
+            }
+        });
+        out.start();
+    }
+
+    /**
+     * Snapshots the current page for the transition. Returns null when there
+     * is nothing drawn yet (first layout) or the tab did not change.
+     */
+    private android.graphics.Bitmap capturePageSnapshot(int fromTab, int toTab) {
+        if (fromTab == toTab || contentHost == null
+                || contentHost.getChildCount() == 0) {
+            return null;
+        }
+        View page = contentHost.getChildAt(0);
+        if (page.getWidth() == 0 || page.getHeight() == 0) {
+            return null;
+        }
+        try {
+            android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(
+                page.getWidth(), page.getHeight(),
+                android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas c = new android.graphics.Canvas(bmp);
+            page.draw(c);
+            return bmp;
+        } catch (OutOfMemoryError e) {
+            return null; // transition is cosmetic; skip on memory pressure
+        }
     }
 
     /** Forgets every page-scoped view so a stale one is never written to. */
@@ -2941,6 +3057,12 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     public void onBackPressed() {
         if (modsPanel != null && modsPanel.onBackPressed()) {
             return;  // panel consumed it (files -> detail -> browse -> home)
+        }
+        // The settings page is an overlay, not a tab: back closes it to the
+        // tab the user came from (slide/fade plays through showTab).
+        if (currentTab == TAB_SETTINGS) {
+            showTab(TAB_HOME);
+            return;
         }
         super.onBackPressed();
     }
