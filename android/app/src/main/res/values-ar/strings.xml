@@ -272,6 +272,9 @@
 
     <!-- GeneralsX @feature Android port mod-launcher-2 15/09/2026 -->
     <string name="mods_install_from_files">إضافة مود من الذاكرة</string>
+    <string name="mods_pick_archive_or_folder">ملف Zip/RAR/7z، أو مجلد مود مفكوك جاهز — كلاهما يُعالج تلقائيًا</string>
+    <string name="mods_importing_folder">جارٍ نسخ مجلد المود…</string>
+    <string name="mods_import_folder">إضافة مجلد مود مفكوك</string>
     <string name="mods_storage_note">متاح %1$s على هذا القرص</string>
     <string name="mods_storage_freed">تم تنظيف %1$s من الملفات المؤقتة</string>
     <string name="mods_err_low_storage">لا توجد مساحة كافية لبدء هذا التنزيل (متاح %1$s). حرّر بعض المساحة وحاول مجدداً.</string>

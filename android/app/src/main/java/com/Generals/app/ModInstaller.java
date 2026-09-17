@@ -331,6 +331,7 @@ final class ModInstaller {
             if (count == 0) {
                 throw new IOException("no .big archives found in this download");
             }
+            collapseSingleRoot(fileDir);
             writeMeta(fileDir, filePagePath);
             return fileDir;
         } finally {
@@ -360,9 +361,163 @@ final class ModInstaller {
         if (count == 0) {
             throw new IOException("no .big archives found in this file");
         }
+        collapseSingleRoot(fileDir);
         // Local imports carry no ModDB origin — no sidecar, no update badge.
         writeMeta(fileDir, null);
         return fileDir;
+    }
+
+    /**
+     * GeneralsX @feature 16/09/2026 Installs a mod from an ALREADY-EXTRACTED
+     * folder the user picked (SAF/ StorAGe picker hands a real path): copies
+     * the .big set (and the small companion files mods expect — .ini, .txt,
+     * .skb, .map) into Mods/<modName>/<folderName>/, skipping heavyweight
+     * non-game content. The folder may BE the mod (has .big at any depth) or
+     * a wrapper around one — a single wrapping directory is collapsed first,
+     * mirroring the archive path.
+     */
+    static File installFromExtractedFolder(File src, String gameFolder,
+                                           String modName, Listener listener)
+            throws Exception {
+        if (src == null || !src.isDirectory()) {
+            throw new IOException("picked folder no longer exists");
+        }
+        // The picked folder may BE the mod (has .big at any depth) or wrap
+        // it in a single directory; either way the version leaf is the picked
+        // name and any single wrapping directory inside is collapsed after
+        // the copy (same invariant as the archive path).
+        if (!hasBigFile(src)) {
+            throw new IOException("no .big files found in the picked folder");
+        }
+        File fileDir = prepareFileDir(gameFolder, modName, modName);
+        if (listener != null) {
+            listener.onPhase("extracting"); // "copying" shares the phase UI
+        }
+        copyModTree(src, fileDir, listener);
+        if (countBigs(fileDir) == 0) {
+            throw new IOException("no .big files found in the picked folder");
+        }
+        collapseSingleRoot(fileDir);
+        writeMeta(fileDir, null);
+        return fileDir;
+    }
+
+    /**
+     * GenLauncher-style single-version import: the version leaf equals the
+     * mod leaf (Mods/<Mod>/<Mod>/) makes listGroups show a pointless wrapper
+     * level. This flattens that: after installFromExtractedFolder, the
+     * panel calls this to move <modDir>/<version>/ up to <modDir>/ when the
+     * mod has exactly one version AND the version dir is named like the mod.
+     * Old downloads keep their version layout untouched.
+     */
+    static void flattenSingleVersion(File modDir) {
+        File[] entries = modDir.listFiles();
+        if (entries == null || entries.length != 1 || !entries[0].isDirectory()) {
+            return;
+        }
+        File version = entries[0];
+        File[] inner = version.listFiles();
+        if (inner == null) {
+            return;
+        }
+        for (File c : inner) {
+            if (!c.renameTo(new File(modDir, c.getName()))) {
+                return; // keep the wrapper on any failure
+            }
+        }
+        version.delete();
+    }
+
+    /** Files that ride along with a .big set when copying an extracted mod. */
+    private static boolean isCompanionFile(String name) {
+        String n = name.toLowerCase(Locale.US);
+        return n.endsWith(".ini") || n.endsWith(".txt") || n.endsWith(".skb")
+            || n.endsWith(".map") || n.endsWith(".png") || n.endsWith(".jpg")
+            || n.endsWith(".bmp") || n.endsWith(".csf") || n.endsWith(".bmp");
+    }
+
+    private static int countBigs(File dir) {
+        List<File> out = new ArrayList<>();
+        collectBigs(dir, out);
+        return out.size();
+    }
+
+    /**
+     * Copies src's tree into dst, keeping only what a mod install needs:
+     * every .big at any depth, plus companion files beside them. Directories
+     * holding nothing relevant are skipped entirely (screenshots/, source/,
+     * tool dumps...) so a 2 GB extracted drop does not double its footprint.
+     */
+    private static void copyModTree(File src, File dst, Listener listener) throws IOException {
+        File[] entries = src.listFiles();
+        if (entries == null) {
+            return;
+        }
+        if (!dst.isDirectory() && !dst.mkdirs()) {
+            throw new IOException("cannot create " + dst);
+        }
+        for (File e : entries) {
+            if (e.isDirectory()) {
+                File sub = new File(dst, e.getName());
+                copyModTree(e, sub, listener);
+                File[] kept = sub.listFiles();
+                if (kept != null && kept.length == 0) {
+                    sub.delete(); // nothing relevant underneath: drop the shell
+                }
+            } else {
+                String n = e.getName().toLowerCase(Locale.US);
+                if (n.endsWith(".big") || isCompanionFile(n)) {
+                    copyFile(e, new File(dst, e.getName()));
+                    if (listener != null) {
+                        listener.onProgress(0, 0); // indeterminate heartbeat
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * GeneralsX @feature 16/09/2026 GenLauncher-style root collapse. Mod
+     * archives usually wrap everything in one folder ("ModName/readme.txt,
+     * ModName/Data/..."); installing that verbatim would make the -mod root
+     * one level too deep and validate/launch against the wrong tree. When
+     * dest holds exactly one directory and no .big outside it, hoist that
+     * directory's children into dest itself. Readmes/ini next to the .big
+     * set are copied too (mods reference them), but a lone root with no
+     * .big anywhere below stays untouched (not a mod).
+     */
+    static void collapseSingleRoot(File dest) {
+        File[] entries = dest.listFiles();
+        if (entries == null || entries.length == 0) {
+            return;
+        }
+        File onlyDir = null;
+        int dirs = 0;
+        int bigs = 0;
+        for (File e : entries) {
+            if (e.isDirectory()) {
+                dirs++;
+                onlyDir = e;
+            } else if (e.getName().toLowerCase(Locale.US).endsWith(".big")) {
+                bigs++;
+            }
+        }
+        if (dirs != 1 || bigs > 0) {
+            return; // already flat, or multiple roots: leave as extracted
+        }
+        if (!hasBigFile(onlyDir)) {
+            return; // a single non-mod directory: respect the author's layout
+        }
+        File[] children = onlyDir.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File c : children) {
+            if (!c.renameTo(new File(dest, c.getName()))) {
+                return; // partial moves are worse than none; keep the wrap
+            }
+        }
+        onlyDir.delete();
     }
 
     /** Creates (or resets) the install target dir; shared by both install paths. */

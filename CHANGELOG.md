@@ -7,6 +7,26 @@ and the project versions per [Semantic Versioning](https://semver.org/):
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-09-17
+
+### Added
+
+- **GenLauncher-style mod import from storage** — mods can now be added
+  whether they ship as an archive or already unpacked:
+  - A dedicated **import extracted-folder** button on the Mods page picks
+    a folder via the built-in picker and installs it as a mod: every
+    `.big` at any depth is kept, companion files mods expect (`.ini`,
+    `.txt`, `.skb`, `.map`, textures, `.csf`) ride along, and irrelevant
+    heavyweight directories (screenshots, sources, tool dumps) are
+    skipped instead of doubling the footprint.
+  - Single-root archives and folders are **collapsed** the way
+    GenLauncher does it: `ModName/Data/...` installs as `Data/...` under
+    the mod, so the `-mod` root and the Installed list stay clean.
+  - Single-version installs (folder import, local archive, ModDB
+    download) also drop the redundant `Mods/<Mod>/<Mod>/` wrapper leaf,
+    showing one clean row in the Installed list. Multi-version mods and
+    older installs keep their layout.
+
 ## [1.5.2] - 2026-09-16
 
 ### Fixed

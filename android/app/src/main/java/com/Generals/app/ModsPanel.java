@@ -97,6 +97,7 @@ final class ModsPanel extends LinearLayout {
     private static final int SCREEN_FILES = 3;
 
     static final int REQ_PICK_ARCHIVE = 4101;
+    static final int REQ_PICK_FOLDER = 4102;
 
     private static final int SORT_POPULAR = 0;
     private static final int SORT_RATING = 1;
@@ -358,6 +359,9 @@ final class ModsPanel extends LinearLayout {
         }
         UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_folder,
             activity.getString(R.string.mods_install_from_files), this::onInstallFromStorage);
+        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_folder,
+            activity.getString(R.string.mods_import_folder), this::onImportExtractedFolder);
+        UiKit.supporting(card, activity.getString(R.string.mods_pick_archive_or_folder));
         UiKit.supporting(card, activity.getString(R.string.mods_installed_hint));
 
         // GenLauncher behavior: updates are noticed without the user asking.
@@ -653,13 +657,67 @@ final class ModsPanel extends LinearLayout {
         activity.startActivityForResult(intent, REQ_PICK_ARCHIVE);
     }
 
-    /** Entry point for the host's onActivityResult forwarding. */
-    void handleActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode != REQ_PICK_ARCHIVE || resultCode != Activity.RESULT_OK
-                || data == null || data.getData() == null) {
+    /**
+     * GenLauncher-style extracted-folder import: the user browses to the
+     * folder with our own picker (real filesystem paths, no SAF tree dance)
+     * and the installer copies the .big set (+ companions) into Mods/.
+     */
+    private void onImportExtractedFolder() {
+        Activity activity = host.activity();
+        if (gameFolder == null) {
+            toast(activity.getString(R.string.mods_no_game_folder));
             return;
         }
-        importPickedArchive(data.getData());
+        Intent intent = new Intent(activity, FolderPickerActivity.class);
+        activity.startActivityForResult(intent, REQ_PICK_FOLDER);
+    }
+
+    /** Entry point for the host's onActivityResult forwarding. */
+    void handleActivityResult(int requestCode, int resultCode, Intent data) {
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            return;
+        }
+        if (requestCode == REQ_PICK_ARCHIVE && data.getData() != null) {
+            importPickedArchive(data.getData());
+        } else if (requestCode == REQ_PICK_FOLDER) {
+            String path = data.getStringExtra(FolderPickerActivity.EXTRA_SELECTED_PATH);
+            if (path != null) {
+                importPickedFolder(new File(path));
+            }
+        }
+    }
+
+    private void importPickedFolder(File dir) {
+        Activity activity = host.activity();
+        showInstallCard(dir.getName());
+        final ModInstaller.Listener listener = makeInstallListener();
+        new Thread(() -> {
+            String error = null;
+            try {
+                File installed = ModInstaller.installFromExtractedFolder(
+                    dir, gameFolder, dir.getName(), listener);
+                // GenLauncher style: a folder-picked mod is its own single
+                // version — collapse the duplicated <Mod>/<Mod>/ wrapper so
+                // the Installed list shows one clean row.
+                if (installed != null) {
+                    ModInstaller.flattenSingleVersion(installed.getParentFile());
+                }
+            } catch (Exception e) {
+                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
+            }
+            final String finalError = error;
+            activity.runOnUiThread(() -> {
+                if (statusBar != null) {
+                    statusBar.setVisibility(View.GONE);
+                }
+                if (!isFinishingSafe()) {
+                    if (finalError != null) {
+                        toast(activity.getString(R.string.mods_err_install, finalError));
+                    }
+                    rebuild();
+                }
+            });
+        }, "gx-mod-folder-import").start();
     }
 
     private void importPickedArchive(Uri uri) {
@@ -712,7 +770,13 @@ final class ModsPanel extends LinearLayout {
                 if (dot > 0) {
                     modName = modName.substring(0, dot);
                 }
-                ModInstaller.installFromLocalFile(archive, gameFolder, modName, listener);
+                File installed = ModInstaller.installFromLocalFile(
+                    archive, gameFolder, modName, listener);
+                // GenLauncher style: single-version installs (archive or
+                // ModDB download) collapse the redundant <Mod>/<Mod>/ leaf.
+                if (installed != null) {
+                    ModInstaller.flattenSingleVersion(installed.getParentFile());
+                }
             } catch (Exception e) {
                 error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
             } finally {
@@ -1358,8 +1422,13 @@ final class ModsPanel extends LinearLayout {
             String error = null;
             try {
                 String url = ModDbClient.resolveDownloadUrl(installFile.pagePath);
-                ModInstaller.downloadAndInstall(url, gameFolder, installMod.name, base,
-                    installFile.pagePath, listener);
+                File installed = ModInstaller.downloadAndInstall(url, gameFolder,
+                    installMod.name, base, installFile.pagePath, listener);
+                // GenLauncher style: a single-version ModDB download collapses
+                // its redundant <Mod>/<Mod>/ leaf exactly like local installs.
+                if (installed != null) {
+                    ModInstaller.flattenSingleVersion(installed.getParentFile());
+                }
             } catch (Exception e) {
                 error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
             }
