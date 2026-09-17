@@ -286,6 +286,10 @@
     <string name="mods_pick_archive_or_folder">Zip/RAR/7z file, or an already-extracted mod folder — both are handled automatically</string>
     <string name="mods_importing_folder">Copying extracted mod folder…</string>
     <string name="mods_import_folder">Add extracted mod folder</string>
+    <string name="mods_downloads_short">downloads</string>
+    <string name="mods_votes_format">%1$s votes</string>
+    <string name="mods_rank_format">Rank %1$s</string>
+    <string name="mods_watchers_format">%1$s watching</string>
     <string name="mods_storage_note">%1$s free on this drive</string>
     <string name="mods_storage_freed">%1$s of temp files cleaned</string>
     <string name="mods_err_low_storage">Not enough free space to start this download (%1$s free). Free up space and try again.</string>

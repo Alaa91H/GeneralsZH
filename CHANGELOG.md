@@ -7,6 +7,39 @@ and the project versions per [Semantic Versioning](https://semver.org/):
 
 ## [Unreleased]
 
+### Fixed
+
+- **Infinite rebuild loop in the Mods panel** (critical) — mod families
+  installed from storage (no ModDB origin) were skipped by the automatic
+  update check without recording a verdict, leaving `updateByGroup` empty,
+  so every `rebuild()` re-armed the check: the panel rebuilt itself forever
+  (~80% CPU), the view tree was replaced between every touch DOWN and UP,
+  and the whole Mods tab appeared dead. Skipped groups now record a
+  verdict like any other.
+- **Mods tab unresponsive on the test device** — same root cause as the
+  loop above; touch works everywhere again (verified on device).
+- **Misleading failure mode when Private DNS blocks ModDB** — with an
+  ad-blocking Private DNS (e.g. `dns.adguard.com`, observed on the test
+  device) `addons.moddb.com` / `image.moddb.com` return NXDOMAIN, every
+  WebView challenge pass fails on its assets, and the edge answers the
+  direct client 403. The error now names the resolver and the fix
+  ("set Private DNS to Automatic") instead of a bare HTTP 403.
+- **ChallengeActivity false success** — an in-WebView error page (not a
+  challenge, not content either) was classified as "cleared" because the
+  check only rejected the interstitial; the verification now requires
+  real ModDB markup (size + domain) before declaring success.
+
+### Changed
+
+- **Settings page deduplicated** — the gear page repeated the graphics
+  sections (render backend, custom driver, dxvk.conf, launch options)
+  that moved to Home in the two-tab reorganization. Settings now opens
+  directly with language / text scale / logs / diagnostics / help.
+- **Trust user-added CAs for in-app WebViews** (`networkSecurityConfig`):
+  on networks with a user-installed filtering CA, Chrome browses ModDB
+  while WebView died with `net_error -202`; both now behave the same.
+  Cleartext remains forbidden.
+
 ## [1.5.3] - 2026-09-17
 
 ### Added

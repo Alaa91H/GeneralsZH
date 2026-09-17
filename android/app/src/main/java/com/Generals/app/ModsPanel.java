@@ -530,7 +530,15 @@ final class ModsPanel extends LinearLayout {
                     }
                 }
                 if (profilePath == null) {
-                    continue; // storage import or pre-1.4 install: no origin
+                    // Storage import or pre-1.4 install: no origin to query.
+                    // Record a verdict anyway — a skipped group that leaves no
+                    // entry keeps updateByGroup empty, so every rebuild()
+                    // re-armed this auto-check: an infinite rebuild loop
+                    // (observed as ~80% CPU and a dead touch layer, because
+                    // the view tree was replaced between every touch DOWN
+                    // and UP).
+                    updateByGroup.put(group.modName, false);
+                    continue;
                 }
                 boolean update = false;
                 try {
@@ -1149,6 +1157,24 @@ final class ModsPanel extends LinearLayout {
             UiKit.chip(chips, R.drawable.ic_gen_download, detailData.downloads,
                 R.color.gen_on_surface_variant, R.color.gen_surface_container_high);
         }
+        // GeneralsX @feature 17/09/2026 GenLauncher-style stats chips:
+        // vote count behind the score, site rank, and watchers. Each is
+        // optional — a reshaped page just renders fewer chips.
+        if (detailData.ratingVotes != null && !detailData.ratingVotes.isEmpty()) {
+            UiKit.chip(chips, R.drawable.ic_gen_check,
+                activity.getString(R.string.mods_votes_format, detailData.ratingVotes),
+                R.color.gen_on_surface_variant, R.color.gen_surface_container_high);
+        }
+        if (detailData.rank != null && !detailData.rank.isEmpty()) {
+            UiKit.chip(chips, R.drawable.ic_gen_chip,
+                activity.getString(R.string.mods_rank_format, detailData.rank),
+                R.color.gen_on_surface_variant, R.color.gen_surface_container_high);
+        }
+        if (detailData.watchers != null && !detailData.watchers.isEmpty()) {
+            UiKit.chip(chips, R.drawable.ic_gen_chip,
+                activity.getString(R.string.mods_watchers_format, detailData.watchers),
+                R.color.gen_on_surface_variant, R.color.gen_surface_container_high);
+        }
         if (chips.getChildCount() > 0) {
             listHost.addView(chips, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -1292,6 +1318,16 @@ final class ModsPanel extends LinearLayout {
                     supporting.append(" \u00b7 ");
                 }
                 supporting.append(file.sizeBytes);
+            }
+            // GeneralsX @feature 17/09/2026 GenLauncher-style per-version
+            // download counts ("17.4K downloads") from the /downloads page.
+            if (file.downloadCount != null && !file.downloadCount.isEmpty()) {
+                if (supporting.length() > 0) {
+                    supporting.append(" \u00b7 ");
+                }
+                supporting.append(file.downloadCount)
+                          .append(' ')
+                          .append(activity.getString(R.string.mods_downloads_short));
             }
             UiKit.listRow(card, R.drawable.ic_gen_download, file.name,
                 supporting.length() > 0 ? supporting.toString()

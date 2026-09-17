@@ -506,23 +506,13 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
                     FrameLayout.LayoutParams.MATCH_PARENT));
                 break;
             case TAB_SETTINGS:
-                // GeneralsX @feature Android port launcher-ui 16/09/2026 The
-                // gear page: everything configurational in one scroll,
-                // grouped graphics -> interface -> tools/logs -> help. The
-                // former flat tabs remain reachable as in-page sections.
-                buildRenderBackendSection(page);
-                // Custom Vulkan driver / dxvk.conf only matter when Vulkan is
-                // the selected backend -- the GLES/GLES+ANGLE paths never
-                // touch DXVK at all, see
-                // Core/Libraries/Source/d3d8gles/CMakeLists.txt.
-                if (RENDER_BACKEND_VULKAN.equals(getRenderBackendChoice())) {
-                    applyRecommendedDriverIfNeeded();
-                    buildCustomDriverSection(page);
-                    buildDxvkConfigSection(page);
-                }
-                // GeneralsX @feature Android port launcher-options 15/09/2026
-                // Fixed-resolution override + advanced launch arguments.
-                buildLaunchOptionsSection(page);
+                // GeneralsX @refactor Android port launcher-ui 17/09/2026
+                // The graphics sections (render backend, custom driver,
+                // dxvk.conf, launch options) live in Home since the two-tab
+                // reorganization — repeating them here duplicated every
+                // control and doubled the state-refresh burden. The gear
+                // page keeps only what Home does not show: interface
+                // (language, text scale), logs, diagnostics and help.
                 buildLanguageSection(page);
                 buildUiScaleSection(page);
                 buildLogsSection(page);

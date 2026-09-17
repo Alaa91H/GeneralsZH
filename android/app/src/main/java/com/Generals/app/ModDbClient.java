@@ -110,13 +110,23 @@ final class ModDbClient {
         final String date;       // human-readable post date as ModDB shows it
         final String sizeBytes;  // size line as ModDB shows it, e.g. "282.14mb"
         final String pagePath;   // site path of the file's page; download resolves from here
+        // GeneralsX @feature 17/09/2026 Per-file download count ("17.4K")
+        // from the /downloads sidebar buttons — GenLauncher's version-list
+        // stat. Null when the stats block is absent.
+        final String downloadCount;
 
         ModFile(String name, String category, String date, String sizeBytes, String pagePath) {
+            this(name, category, date, sizeBytes, pagePath, null);
+        }
+
+        ModFile(String name, String category, String date, String sizeBytes, String pagePath,
+                String downloadCount) {
             this.name = name;
             this.category = category;
             this.date = date;
             this.sizeBytes = sizeBytes;
             this.pagePath = pagePath;
+            this.downloadCount = downloadCount;
         }
     }
 
@@ -137,13 +147,26 @@ final class ModDbClient {
         final List<String> screenshots;
         final String rating;
         final String downloads;
+        // GeneralsX @feature 17/09/2026 GenLauncher-style stats block:
+        // rating votes ("701"), site rank ("11 of 66,852"), and watcher
+        // count ("2,984"). All nullable/empty-safe like the other fields.
+        final String ratingVotes;
+        final String rank;
+        final String watchers;
 
         ModDetails(String profilePath, String name, String description, String imageUrl) {
-            this(profilePath, name, description, imageUrl, null, null, null);
+            this(profilePath, name, description, imageUrl, null, null, null, null, null, null);
         }
 
         ModDetails(String profilePath, String name, String description, String imageUrl,
                    List<String> screenshots, String rating, String downloads) {
+            this(profilePath, name, description, imageUrl, screenshots, rating, downloads,
+                null, null, null);
+        }
+
+        ModDetails(String profilePath, String name, String description, String imageUrl,
+                   List<String> screenshots, String rating, String downloads,
+                   String ratingVotes, String rank, String watchers) {
             this.profilePath = profilePath;
             this.name = name;
             this.description = description;
@@ -151,6 +174,9 @@ final class ModDbClient {
             this.screenshots = screenshots != null ? screenshots : new ArrayList<>();
             this.rating = rating;
             this.downloads = downloads;
+            this.ratingVotes = ratingVotes;
+            this.rank = rank;
+            this.watchers = watchers;
         }
     }
 
@@ -266,6 +292,16 @@ final class ModDbClient {
                 s_lastPageFetchMs = System.currentTimeMillis();
             }
             if (status < 200 || status >= 300) {
+                // 403 with a desktop UA on a device whose Private DNS is an
+                // ad-blocker (observed: dns.adguard.com NXDOMAINs
+                // addons.moddb.com / image.moddb.com, which the Cloudflare
+                // challenge and ModDB assets need, while www resolves) reads
+                // as bot-verdict at the edge. Surface the actionable cause.
+                if (status == 403 && privateDnsBlocksModDb()) {
+                    throw new IOException("HTTP 403 — this device's Private DNS ("
+                        + privateDnsName() + ") blocks ModDB's domains; "
+                        + "set Private DNS to Automatic in system settings");
+                }
                 throw new IOException("HTTP " + status);
             }
             StringBuilder body = new StringBuilder(256 * 1024);
@@ -290,6 +326,47 @@ final class ModDbClient {
             if (conn != null) {
                 conn.disconnect();
             }
+        }
+    }
+
+    /**
+     * True when the device's DNS cannot resolve ModDB's asset/challenge
+     * domains. With an ad-blocking Private DNS (observed on the test
+     * device: dns.adguard.com), www.moddb.com resolves but
+     * addons./image.moddb.com return NXDOMAIN — the Cloudflare challenge
+     * then never loads its scripts, every WebView pass fails, and the
+     * edge answers the direct client 403. Detection is a pure resolver
+     * probe: cheap, no network fetch of any page.
+     */
+    private static boolean privateDnsBlocksModDb() {
+        String[] required = {"addons.moddb.com", "image.moddb.com"};
+        for (String host : required) {
+            try {
+                if (java.net.InetAddress.getAllByName(host).length == 0) {
+                    return true;
+                }
+            } catch (java.net.UnknownHostException e) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The configured Private DNS hostname, for the user-facing message. */
+    private static String privateDnsName() {
+        try {
+            Activity host = s_hostActivity;
+            if (host == null) {
+                return "resolver";
+            }
+            // "private_dns_specifier" is the Settings.Global key for the
+            // Private DNS hostname; the constant itself is hidden API, the
+            // lookup through the public getString is not.
+            String name = android.provider.Settings.Global.getString(
+                host.getContentResolver(), "private_dns_specifier");
+            return name != null && !name.isEmpty() ? name : "resolver";
+        } catch (Exception e) {
+            return "resolver";
         }
     }
 
@@ -358,7 +435,18 @@ final class ModDbClient {
     static List<ModFile> fetchModFiles(String profilePath) throws IOException {
         // The downloads tab of the mod's profile. Trailing "#downloadsform"
         // anchors seen on the site are stripped by the href pattern itself.
+        // GeneralsX @feature 17/09/2026 The same page's sidebar download
+        // buttons carry each file's count and size; parse them into a map
+        // and join by page path so the file list shows GenLauncher-style
+        // stats without a second request.
         String html = fetchPage(SITE + profilePath + "/downloads");
+        java.util.Map<String, String> statByPath = new java.util.HashMap<>();
+        Matcher stat = FILE_STAT_BUTTON.matcher(html);
+        while (stat.find()) {
+            if (!statByPath.containsKey(stat.group(1))) {
+                statByPath.put(stat.group(1), stat.group(2));
+            }
+        }
         List<ModFile> out = new ArrayList<>();
         Matcher row = ROW_START.matcher(html);
         while (row.find()) {
@@ -373,11 +461,9 @@ final class ModDbClient {
             }
             String category = decodeEntities(firstMatch(block, SUBHEADING_CATEGORY));
             String date = firstMatch(block, ROW_DATE);
-            // The file page itself carries the exact size; the list row does
-            // not. Leave it null here and fill it in when the user opens the
-            // detail view (a later fetchFileSize could add it).
             out.add(new ModFile(name, category == null ? "" : category,
-                                date == null ? "" : date, null, page));
+                                date == null ? "" : date, null, page,
+                                statByPath.get(page)));
         }
         return out;
     }
@@ -423,8 +509,11 @@ final class ModDbClient {
         return new ModDetails(summary.profilePath, summary.name, desc,
                               hero != null ? hero : summary.imageUrl,
                               shots,
-                              decodeEntities(firstMatch(html, ROW_RATING)),
-                              decodeEntities(firstMatch(html, ROW_DOWNLOADS)));
+                              decodeEntities(firstMatch(html, PROFILE_RATING_VALUE)),
+                              decodeEntities(firstMatch(html, ROW_DOWNLOADS)),
+                              decodeEntities(firstMatch(html, PROFILE_RATING_VOTES)),
+                              decodeEntities(firstMatch(html, PROFILE_RANK)),
+                              decodeEntities(firstMatch(html, PROFILE_WATCHERS)));
     }
 
     /** Truncates the markup after a list-row start marker into a parse block. */
@@ -562,10 +651,13 @@ final class ModDbClient {
         Pattern.compile("<time datetime=\"[^\"]*\">([^<]+)</time>");
     private static final Pattern SUBHEADING_CATEGORY =
         Pattern.compile("subheading\">\\s*(?:<time[^>]*>[^<]*</time>)?\\s*([A-Za-z ][^<]{2,40})<");
-    // GeneralsX @feature 15/09/2026 Row thumbnails: ModDB's imagehost CDN URLs
-    // in the row's img src. imagethumb URLs are small (<100KB) and stable.
+    // GeneralsX @bugfix 17/09/2026 Row thumbnails: ModDB list rows use
+    // media.moddb.com cache URLs (.../crop_120x90/<name>.jpg) with no
+    // "thumb" token, so the old imagethumb/thumb pattern matched nothing
+    // and every browse card fell back to the placeholder icon. Match any
+    // ModDB media image; rowBlock() scopes the match to the row markup.
     private static final Pattern ROW_THUMB =
-        Pattern.compile("src=\"(https://[^\"]*(?:imagehost|moddb)\\.com/[^\"]*(?:imagethumb|thumb)[^\"]*\\.(?:jpg|png|jpeg))\"");
+        Pattern.compile("src=\"(https://(?:media|images)\\.moddb\\.com/[^\"]*\\.(?:jpg|jpeg|png))\"");
     private static final Pattern ROW_RATING =
         Pattern.compile("class=\"rating\"[^>]*>\\s*([0-9.]+)");
     // GeneralsX @bugfix 15/09/2026 Anchored to the row's own stats span:
@@ -575,6 +667,18 @@ final class ModDbClient {
     // requiring the tag before the number keeps it to the real counter.
     private static final Pattern ROW_DOWNLOADS =
         Pattern.compile("<span[^>]*>\\s*([0-9][0-9,.]*)\\s*downloads</span>");
+    // GeneralsX @feature 17/09/2026 Profile-page rating + stats. The
+    // AggregateRating microdata is exact (the plain class="rating" markup
+    // also matches the "You Say" vote form); the stats table is
+    // <h5>Label</h5> ... <span class="summary">VALUE</a>.
+    private static final Pattern PROFILE_RATING_VALUE =
+        Pattern.compile("itemprop=\"ratingValue\" content=\"([0-9.]+)\"");
+    private static final Pattern PROFILE_RATING_VOTES =
+        Pattern.compile("itemprop=\"ratingCount\">([0-9,]+)<");
+    private static final Pattern PROFILE_RANK =
+        Pattern.compile("<h5>Rank</h5>[\\s\\S]{0,200}?<a href=\"/mods/top\">([^<]+)</a>");
+    private static final Pattern PROFILE_WATCHERS =
+        Pattern.compile("<h5>Watchers</h5>[\\s\\S]{0,200}?>([0-9,]+) members<");
     // GeneralsX @feature 15/09/2026 Profile-page description + hero image.
     private static final Pattern PROFILE_INTRO =
         Pattern.compile("id=\"introwrap\"");
@@ -597,6 +701,14 @@ final class ModDbClient {
         Pattern.compile("href=\"(/mods/[a-z0-9_-]+/downloads/[a-z0-9_-]+)\"");
     private static final Pattern DOWNLOAD_START_HREF =
         Pattern.compile("href=\"(/downloads/start/[0-9]+)\"");
+
+    // Per-file stat buttons on the mod's /downloads page: each sidebar
+    // button carries the download count ("17.4K") then the size
+    // ("1.62gb") for that file — the exact numbers GenLauncher shows on
+    // its version list. Keyed by the same file-page path fetchModFiles
+    // returns, so rows and stats can be joined without a second parse.
+    private static final Pattern FILE_STAT_BUTTON =
+        Pattern.compile("href=\"(/mods/[a-z0-9_-]+/downloads/[a-z0-9_-]+)\" class=\"button buttonfull\"><span[^>]*>([^<]+)</span><span[^>]*>([^<]+)</span>");
 
     private static String firstMatch(String text, Pattern p) {
         if (text == null) {

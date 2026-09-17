@@ -79,7 +79,8 @@
         android:appCategory="game"
         android:hardwareAccelerated="true"
         android:supportsRtl="true"
-        android:requestLegacyExternalStorage="false">
+        android:requestLegacyExternalStorage="false"
+        android:networkSecurityConfig="@xml/network_security_config">
 
         <activity
             android:name=".GameActivity"
@@ -172,8 +173,13 @@
             android:theme="@style/Theme.Generals"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- GeneralsX @bugfix Android port 17/09/2026 This entry still named the
+             pre-rename class GeneralsOnlineActivity; the class is OnlineActivity
+             since the com.Generals.app rename pass. A manifest <activity> pointing
+             at a missing class compiles fine but ActivityNotFoundException-crashes
+             the app the moment the GeneralsOnline account button is tapped. -->
         <activity
-            android:name=".GeneralsOnlineActivity"
+            android:name=".OnlineActivity"
             android:exported="false"
             android:theme="@style/Theme.Generals"
             android:configChanges="orientation|screenSize|keyboardHidden" />

@@ -151,7 +151,13 @@ public class ChallengeActivity extends Activity {
     private void checkCleared(WebView v) {
         v.evaluateJavascript("document.documentElement.outerHTML", value -> {
             String html = WebViewFetch.unquoteJsString(value);
-            if (!WebViewFetch.looksLikeChallenge(html)) {
+            // "Not a challenge" is not enough: an error page (observed:
+            // WebView's own "net::ERR" SSL-failure page on a network whose
+            // user CA WebView did not trust — now fixed by the app's
+            // network security config) is also not a challenge, and calling
+            // that a success made the client retry a dead cookie and fail
+            // with a confusing 403. Require real ModDB content instead.
+            if (isRealModDbPage(html)) {
                 sCleared = true;
                 Toast.makeText(this, R.string.challenge_done,
                     Toast.LENGTH_SHORT).show();
@@ -160,6 +166,15 @@ public class ChallengeActivity extends Activity {
                 webView.postDelayed(this::finish, 600);
             }
         });
+    }
+
+    /** True when the DOM is genuine ModDB markup, not an error/blank page. */
+    private static boolean isRealModDbPage(String html) {
+        if (html == null || html.length() < 4096) {
+            return false; // real pages are tens of KB; error pages are tiny
+        }
+        return html.contains("moddb.com")
+            && (html.contains("<body") || html.contains("MODDB"));
     }
 
     @Override

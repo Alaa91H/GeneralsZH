@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+GeneralsX @tweak Android port launcher-ui-2026 17/09/2026
+
+ModDB fetches ride the user's own network, and some phones sit behind a
+user-installed filtering/proxy CA (observed on the test device: Chrome opens
+ModDB fine while every WebView connection dies with net_error -202
+"Trust anchor not found", because WebView only trusts system CAs since
+Android 7). Trusting user-added CAs here puts WebView on the same footing
+as the browser the user already trusts on this device. Cleartext stays
+forbidden; the direct HTTPS client is unaffected by this config.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
