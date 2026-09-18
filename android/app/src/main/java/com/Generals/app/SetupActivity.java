@@ -51,10 +51,10 @@ import android.text.style.UnderlineSpan;
 import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.View;
-// GeneralsX @feature Android port launcher-ui 17/09/2026 Animated tab
-// transitions: a horizontal slide between the two bottom tabs (direction
-// follows which side the target tab sits on, RTL-aware) and a fade for the
-// settings page, which is a top-level overlay rather than a "next" tab.
+// GeneralsX @feature Android port launcher-ui 17/09/2026 Animated page
+// transition: a fade for the Settings page, which is a top-level overlay
+// rather than a "next" tab. (The horizontal slide died with the bottom-tab
+// rail on 18/09/2026.)
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
@@ -300,14 +300,14 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     // and status line that existed before still exists, and every string
     // resource is still used. See showTab() for where each one landed.
     private static final String STATE_TAB = "gen_tab";
-    // GeneralsX @feature Android port launcher-ui 16/09/2026 Two bottom
-    // destinations only: Home (launch + game folder + GeneralsOnline + the
-    // graphics sections merged in) and Mods. Everything configurational
-    // (interface, tools, logs, help) lives on a single Settings page reached
-    // from the gear icon in the top bar (replacing the logs shortcut, which
-    // moved into Settings) -- the launcher's own hierarchy, not a flat
-    // six-tab rail. TAB_GRAPHICS/TAB_INTERFACE/TAB_TOOLS/TAB_HELP remain as
-    // page identities inside Home/Settings; showTab() maps them.
+    // GeneralsX @feature Android port launcher-ui 16/09/2026 Two pages, no
+    // bottom rail: Home (launch + game folder + GeneralsOnline + graphics
+    // + mods, all merged into one scroll) and Settings (interface, tools,
+    // logs, help) behind the top-bar gear. TAB_GRAPHICS/TAB_INTERFACE/
+    // TAB_TOOLS/TAB_MODS/TAB_HELP remain as page identities inside
+    // Home/Settings; showTab() maps them. The ModsPanel is embedded inline
+    // (without its app bar) so the mod flow lives where the user expects
+    // it; ModManagerActivity remains for deep links.
     private static final int TAB_HOME = 1;
     private static final int TAB_GRAPHICS = 2;
     private static final int TAB_INTERFACE = 3;
@@ -315,19 +315,11 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     private static final int TAB_MODS = 5;
     private static final int TAB_HELP = 6;
     private static final int TAB_SETTINGS = 7;
-    // GeneralsX @feature Android port launcher-ui 15/09/2026 Mods is a
-    // bottom page again. BottomNavigationView hard-caps at five items (the
-    // sixth threw IllegalArgumentException and broke the whole settings UI),
-    // so the bottom bar is now a custom LinearLayout rail: six equal
-    // destination buttons with the same checked-pill look, no Material cap.
-    // The panel is embedded inline (ModsPanel without its app bar) so the
-    // mod flow lives where the user expects it; ModManagerActivity remains
-    // for the Tools entry and deep links.
 
     private int currentTab = TAB_HOME;
     private FrameLayout contentHost;
     private TextView appBarTitle;
-    private ModsPanel modsPanel;   // non-null only while TAB_MODS is showing
+    private ModsPanel modsPanel;   // non-null only while the Home page is showing
 
     private void buildUi() {
         clearPageReferences();
@@ -341,7 +333,11 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         // navigation bar below clears the gesture handle.
         InsetUtil.applySafeInsets(shell);
 
-        appBarTitle = UiKit.appBar(shell, getString(R.string.setup_title),
+        // GeneralsX @refactor 18/09/2026 No overline: the "Command &
+        // Conquer..." brand line above the title was redundant chrome on
+        // every page — the title alone names the screen. UiKit.appBar
+        // already skips the overline view when passed null.
+        appBarTitle = UiKit.appBar(shell, null,
             getString(R.string.nav_tab_home),
             R.drawable.ic_gen_settings, getString(R.string.nav_tab_settings), this::onOpenSettings);
 
@@ -349,111 +345,13 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         shell.addView(contentHost, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        shell.addView(buildBottomNav(), new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
+        // GeneralsX @refactor Android port launcher-ui 18/09/2026 No bottom
+        // rail: the tabs merged into one Home page, so a single-destination
+        // bar was chrome without a choice. Home is the page; the gear icon
+        // in the top bar opens Settings.
         if (contentHost.getChildCount() == 0) {
             showTab(currentTab);
         }
-    }
-
-    /**
-     * GeneralsX @feature Android port launcher-ui 15/09/2026 Six-destination
-     * bottom rail, replacing BottomNavigationView (five-item hard cap). Same
-     * visual language as the Material bar it replaces: icon over label, an
-     * active-indicator pill behind the selected destination, primary/on-
-     * surface tints, LTR-pinned order (see the rationale the old bar carried).
-     */
-    private LinearLayout buildBottomNav() {
-        LinearLayout rail = new LinearLayout(this);
-        rail.setOrientation(LinearLayout.HORIZONTAL);
-        rail.setLayoutDirection(android.view.View.LAYOUT_DIRECTION_LTR);
-        rail.setBackgroundColor(UiKit.color(this, R.color.gen_surface_container_low));
-        rail.setElevation(0f);
-        int vPad = UiKit.dp(this, 8);
-        rail.setPadding(0, vPad, 0, vPad);
-
-        // Two destinations: everything configurational is behind the gear.
-        int[][] items = {
-            {TAB_HOME, R.string.nav_tab_home, R.drawable.ic_gen_home},
-            {TAB_MODS, R.string.nav_tab_mods, R.drawable.ic_gen_chip},
-        };
-        for (int[] it : items) {
-            rail.addView(buildNavItem(it[0], it[1], it[2]),
-                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        }
-        return rail;
-    }
-
-    private View buildNavItem(int tab, int labelRes, int iconRes) {
-        LinearLayout item = new LinearLayout(this);
-        item.setOrientation(LinearLayout.VERTICAL);
-        item.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
-        item.setClickable(true);
-        item.setFocusable(true);
-        item.setOnClickListener(v -> showTab(tab));
-
-        android.widget.FrameLayout iconHost = new android.widget.FrameLayout(this);
-        android.graphics.drawable.GradientDrawable pillBg =
-            new android.graphics.drawable.GradientDrawable();
-        pillBg.setCornerRadius(UiKit.dp(this, 14));
-        pillBg.setColor(UiKit.color(this, R.color.gen_primary_container));
-        android.view.View pill = new android.view.View(this);
-        pill.setBackground(pillBg);
-        iconHost.addView(pill, new android.widget.FrameLayout.LayoutParams(
-            UiKit.dp(this, 44), UiKit.dp(this, 28)));
-        android.widget.ImageView icon = new android.widget.ImageView(this);
-        icon.setImageResource(iconRes);
-        int iconPad = UiKit.dp(this, 8);
-        icon.setPadding(iconPad, iconPad, iconPad, iconPad);
-        iconHost.addView(icon, new android.widget.FrameLayout.LayoutParams(
-            UiKit.dp(this, 44), UiKit.dp(this, 28)));
-        item.addView(iconHost, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        android.widget.TextView label = new android.widget.TextView(this);
-        label.setText(labelRes);
-        label.setTextSize(11f);
-        label.setGravity(android.view.Gravity.CENTER);
-        item.addView(label, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        styleNavItem(item, pill, icon, label, tab == currentTab);
-        navItems.add(new NavItem(tab, item, pill, icon, label));
-        return item;
-    }
-
-    private static final class NavItem {
-        final int tab;
-        final LinearLayout item;
-        final android.view.View pill;
-        final android.widget.ImageView icon;
-        final android.widget.TextView label;
-
-        NavItem(int tab, LinearLayout item, android.view.View pill,
-                android.widget.ImageView icon, android.widget.TextView label) {
-            this.tab = tab;
-            this.item = item;
-            this.pill = pill;
-            this.icon = icon;
-            this.label = label;
-        }
-    }
-
-    private final java.util.ArrayList<NavItem> navItems = new java.util.ArrayList<>();
-
-    private void styleNavItem(NavItem n, boolean selected) {
-        styleNavItem(n.item, n.pill, n.icon, n.label, selected);
-    }
-
-    private void styleNavItem(LinearLayout item, android.view.View pill,
-                              android.widget.ImageView icon, android.widget.TextView label,
-                              boolean selected) {
-        pill.setVisibility(selected ? android.view.View.VISIBLE : android.view.View.INVISIBLE);
-        int tint = UiKit.color(this, selected
-            ? R.color.gen_on_primary_container : R.color.gen_on_surface_faint);
-        icon.setColorFilter(tint);
-        label.setTextColor(tint);
     }
 
     private int tabTitle(int tab) {
@@ -461,7 +359,6 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
             case TAB_GRAPHICS:  return R.string.nav_tab_graphics;
             case TAB_INTERFACE: return R.string.nav_tab_interface;
             case TAB_TOOLS:     return R.string.nav_tab_tools;
-            case TAB_MODS:      return R.string.nav_tab_mods;
             case TAB_HELP:      return R.string.nav_tab_help;
             case TAB_SETTINGS:  return R.string.nav_tab_settings;
             default:            return R.string.nav_tab_home;
@@ -488,38 +385,19 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
             capturePageSnapshot(fromTab, tab);
         currentTab = tab;
         if (contentHost == null) {
-            return;  // the plain-widget fallback UI is up; there are no tabs
+            return;  // the plain-widget fallback UI is up; there are no pages
         }
         clearPageReferences();
         modsPanel = null;          // page-scoped like every other view ref
-        if (ModDbClient.hostActivity() == this) {
-            ModDbClient.setHostActivity(null);  // leaving the Mods page
-        }
         contentHost.removeAllViews();
-        for (NavItem n : navItems) {
-            styleNavItem(n, n.tab == tab);
-        }
         if (appBarTitle != null) {
             appBarTitle.setText(tabTitle(tab));
         }
 
-        // The Mods page hosts the full manager panel instead of a scrolling
-        // settings page; every other tab builds into one.
-        LinearLayout page = tab == TAB_MODS ? null : UiKit.scrollingPage(contentHost);
+        // Every tab builds into a scrolling page; the merged Home page hosts
+        // the mods panel as an inline section at the end.
+        LinearLayout page = UiKit.scrollingPage(contentHost);
         switch (tab) {
-            case TAB_MODS:
-                // Embedded panel (no app bar of its own — the shell's title
-                // row already names the tab); re-created per visit so its
-                // Installed list always reflects the current game folder.
-                // This activity is also the fetch host: ModDbClient falls
-                // back to a WebView (headless, then the visible challenge)
-                // and needs a live Activity to attach them to.
-                ModDbClient.setHostActivity(this);
-                modsPanel = new ModsPanel(this, this, false);
-                contentHost.addView(modsPanel, new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT));
-                break;
             case TAB_SETTINGS:
                 // GeneralsX @refactor Android port launcher-ui 17/09/2026
                 // The graphics sections (render backend, custom driver,
@@ -546,6 +424,13 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
                     buildDxvkConfigSection(page);
                 }
                 buildLaunchOptionsSection(page);
+                // Mods merged into Home (17/09/2026): the full manager panel
+                // (installed cards, repository, detail) is the last section
+                // of the single home page — one page covers launch + mods.
+                modsPanel = new ModsPanel(this, this, false);
+                page.addView(modsPanel, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
                 break;
         }
 
@@ -578,49 +463,26 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         contentHost.addView(ghost, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT));
-        final float w = contentHost.getWidth();
         final DecelerateInterpolator interp = new DecelerateInterpolator(1.4f);
         final long dur = 230;
 
+        // GeneralsX @refactor 18/09/2026 Two pages, one transition: the
+        // Settings overlay fades in over Home, and fades back out. (The old
+        // horizontal slide belonged to the removed bottom-tab rail.)
         if (toTab == TAB_SETTINGS) {
             // Overlay: the new page fades in over the old snapshot.
             incoming.setAlpha(0f);
             ObjectAnimator a = ObjectAnimator.ofFloat(incoming, View.ALPHA, 0f, 1f);
             a.setDuration(dur); a.setInterpolator(interp); a.start();
-            animateOut(ghost, false, 0f, interp, dur);
-        } else if (fromTab == TAB_SETTINGS) {
-            // Leaving settings: its snapshot fades out revealing the tab.
-            animateOut(ghost, false, 0f, interp, dur);
-        } else {
-            // Bottom tabs home <-> mods: slide, mirrored for RTL.
-            boolean rtl = getResources().getConfiguration().getLayoutDirection()
-                == View.LAYOUT_DIRECTION_RTL;
-            boolean forward = (toTab == TAB_MODS) != rtl;
-            float dir = forward ? -1f : 1f;
-            incoming.setTranslationX(-dir * w * 0.25f);
-            incoming.setAlpha(0f);
-            ObjectAnimator inX = ObjectAnimator.ofFloat(incoming,
-                View.TRANSLATION_X, -dir * w * 0.25f, 0f);
-            ObjectAnimator inA = ObjectAnimator.ofFloat(incoming, View.ALPHA, 0f, 1f);
-            AnimatorSet in = new AnimatorSet();
-            in.playTogether(inX, inA);
-            in.setDuration(dur); in.setInterpolator(interp); in.start();
-            animateOut(ghost, true, dir, interp, dur);
         }
+        animateOut(ghost, interp, dur);
     }
 
-    /** Slides (or fades) the ghost snapshot out, then removes and recycles it. */
-    private void animateOut(ImageView ghost, boolean slide, float dir,
+    /** Fades the ghost snapshot out, then removes and recycles it. */
+    private void animateOut(ImageView ghost,
             DecelerateInterpolator interp, long dur) {
         AnimatorSet out = new AnimatorSet();
-        if (slide) {
-            ObjectAnimator aX = ObjectAnimator.ofFloat(ghost, View.TRANSLATION_X,
-                0f, dir * contentHost.getWidth() * 0.4f);
-            ObjectAnimator aA = ObjectAnimator.ofFloat(ghost, View.ALPHA, 1f, 0f);
-            out.playTogether(aX, aA);
-        } else {
-            out.playTogether(ObjectAnimator.ofFloat(ghost, View.ALPHA, 1f, 0f));
-        }
+        out.playTogether(ObjectAnimator.ofFloat(ghost, View.ALPHA, 1f, 0f));
         out.setDuration(dur); out.setInterpolator(interp);
         out.addListener(new AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(Animator a) {
@@ -1414,12 +1276,110 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
             UiKit.chip(content, R.drawable.ic_gen_chip,
                 getString(R.string.setup_render_backend_gpu, gpu),
                 R.color.gen_on_surface, R.color.gen_surface_container_high);
+            // Advisory recommendation: the name is shown, and now what the
+            // project learned from it — still the user's tap to apply, never
+            // an automatic switch (see detectGpuName's comment).
+            String recommended = recommendedBackendFor(gpu);
+            if (!recommended.equals(current)) {
+                UiKit.chip(content, R.drawable.ic_gen_check,
+                    getString(R.string.setup_gpu_recommend,
+                        gpuFamilyLabel(gpu), renderBackendLabel(recommended)),
+                    R.color.gen_primary, R.color.gen_surface_container_high);
+                UiKit.button(content, UiKit.BTN_TONAL, R.drawable.ic_gen_check,
+                    getString(R.string.setup_gpu_apply_recommended),
+                    () -> onPickRenderBackend(recommended));
+            }
+        }
+        if (RENDER_BACKEND_VULKAN.equals(current) && !hasVulkanSupport()) {
+            UiKit.supporting(content, getString(R.string.setup_gpu_no_vulkan_note));
         }
 
         UiKit.helpText(content, getString(R.string.setup_render_backend_help));
     }
 
+    // GeneralsX @feature 18/09/2026 Per-GPU backend recommendation. The
+    // pattern comes from this project's own device reports: DXVK-through-
+    // Vulkan wins on recent Snapdragon (Adreno) with a capable driver,
+    // while PowerVR BXM and Samsung Xclipse corrupt and older Mali parts
+    // lack the Vulkan 1.3 DXVK 2.6 needs — those stay on the native GLES
+    // renderer (or GLES+ANGLE). Advisory only: the button above applies it,
+    // nothing here ever switches a working setup by itself.
+    private String recommendedBackendFor(String gpu) {
+        // Adreno goes Vulkan (DXVK is fastest there and the Turnip
+        // fallback covers old stock drivers). Everything else stays on
+        // the native GLES renderer — including ANGLE-native devices
+        // (Pixels report ANGLE as their GL_RENDERER), where routing
+        // through the bundled ANGLE again would add nothing.
+        if ("adreno".equals(gpuFamily(gpu))) {
+            return RENDER_BACKEND_VULKAN;
+        }
+        return RENDER_BACKEND_GLES;
+    }
+
+    /** Driver family from a GL_RENDERER string, lowercased match. */
+    private static String gpuFamily(String gpu) {
+        String g = gpu.toLowerCase(java.util.Locale.US);
+        if (g.contains("adreno")) {
+            return "adreno";
+        }
+        if (g.contains("mali")) {
+            return "mali";
+        }
+        if (g.contains("powervr") || g.contains("rogue")) {
+            return "powervr";
+        }
+        if (g.contains("xclipse")) {
+            return "xclipse";
+        }
+        if (g.contains("tegra") || g.contains("nvidia")) {
+            return "tegra";
+        }
+        if (g.contains("angle")) {
+            return "angle";
+        }
+        return "other";
+    }
+
+    /** Short human family name for the recommendation sentence. */
+    private static String gpuFamilyLabel(String gpu) {
+        switch (gpuFamily(gpu)) {
+            case "adreno": return "Adreno";
+            case "mali": return "Mali";
+            case "powervr": return "PowerVR";
+            case "xclipse": return "Xclipse";
+            case "tegra": return "Tegra";
+            default: return gpu;
+        }
+    }
+
+    /** False when the OS reports no Vulkan hardware feature at all. */
+    private boolean hasVulkanSupport() {
+        try {
+            return getPackageManager().hasSystemFeature(
+                android.content.pm.PackageManager.FEATURE_VULKAN_HARDWARE_VERSION);
+        } catch (Exception e) {
+            return true; // unknown: don't block the choice on a query failure
+        }
+    }
+
     private void onPickRenderBackend(String choice) {
+        if (RENDER_BACKEND_VULKAN.equals(choice) && !hasVulkanSupport()) {
+            // Fail before the wait: picking Vulkan on a device without any
+            // Vulkan driver wastes a full game launch to discover. The user
+            // can still override — their device, their call.
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle(R.string.setup_gpu_no_vulkan_title)
+                    .setMessage(getString(R.string.setup_gpu_no_vulkan_body))
+                    .setPositiveButton(R.string.setup_gpu_use_anyway,
+                        (d, w) -> saveRenderBackend(choice))
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            return;
+        }
+        saveRenderBackend(choice);
+    }
+
+    private void saveRenderBackend(String choice) {
         File cfg = new File(getFilesDir(), RENDER_BACKEND_CFG_NAME);
         try (java.io.FileWriter w = new java.io.FileWriter(cfg, false)) {
             w.write(choice);
@@ -1432,8 +1392,10 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
         // The Custom Vulkan Driver / DXVK Config cards are only relevant for
         // the Vulkan backend -- rebuilding this one page shows/hides them
         // immediately, without the full recreate() (and the jump back to
-        // Home) the old dialog needed.
-        showTab(TAB_GRAPHICS);
+        // Home) the old dialog needed. TAB_HOME: the graphics sections live
+        // merged in Home since the two-tab reorganization (TAB_GRAPHICS is a
+        // page identity that maps back to Home, not a destination).
+        showTab(TAB_HOME);
     }
 
     // GeneralsX @feature Android port 10/07/2026 Optional custom Vulkan
@@ -3056,10 +3018,10 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
     @Override
     public void onBackPressed() {
         if (modsPanel != null && modsPanel.onBackPressed()) {
-            return;  // panel consumed it (files -> detail -> browse -> home)
+            return;  // panel consumed it (detail -> repository/installed)
         }
-        // The settings page is an overlay, not a tab: back closes it to the
-        // tab the user came from (slide/fade plays through showTab).
+        // The settings page is an overlay: back closes it to Home (the fade
+        // plays through showTab).
         if (currentTab == TAB_SETTINGS) {
             showTab(TAB_HOME);
             return;
@@ -3069,9 +3031,6 @@ public class SetupActivity extends Activity implements ModsPanel.Host {
 
     @Override
     protected void onDestroy() {
-        if (ModDbClient.hostActivity() == this) {
-            ModDbClient.setHostActivity(null);
-        }
         super.onDestroy();
     }
 

@@ -154,7 +154,7 @@ final class ThumbCache {
             conn = (HttpURLConnection) new URL(url).openConnection();
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(15000);
-            conn.setRequestProperty("User-Agent", ModDbClient.USER_AGENT);
+            conn.setRequestProperty("User-Agent", GenLauncherReposClient.USER_AGENT);
             conn.setRequestProperty("Accept", "image/*");
             if (conn.getResponseCode() != 200) {
                 return null;

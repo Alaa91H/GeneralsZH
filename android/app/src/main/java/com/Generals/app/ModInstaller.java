@@ -82,12 +82,20 @@ final class ModInstaller {
         final String dirPath;     // absolute path handed to the engine via -mod
         final long bytesUsed;     // size of every file under dirPath
         final boolean selected;   // currently written to mod_launch.cfg
+        final long installedAt;   // folder mtime = when this version landed
 
         InstalledMod(String displayName, String dirPath, long bytesUsed, boolean selected) {
+            this(displayName, dirPath, bytesUsed, selected,
+                 new File(dirPath).lastModified());
+        }
+
+        InstalledMod(String displayName, String dirPath, long bytesUsed,
+                     boolean selected, long installedAt) {
             this.displayName = displayName;
             this.dirPath = dirPath;
             this.bytesUsed = bytesUsed;
             this.selected = selected;
+            this.installedAt = installedAt;
         }
     }
 
@@ -103,18 +111,52 @@ final class ModInstaller {
         final List<InstalledMod> versions; // sorted: selected first, then name
         final long bytesUsed;              // whole family
         final boolean anySelected;
+        final long latestInstalledAt;      // newest version's install time
 
         ModGroup(String modName, List<InstalledMod> versions) {
             this.modName = modName;
             this.versions = versions;
             long total = 0;
             boolean selected = false;
+            long latest = 0;
             for (InstalledMod v : versions) {
                 total += v.bytesUsed;
                 selected |= v.selected;
+                latest = Math.max(latest, v.installedAt);
             }
             this.bytesUsed = total;
             this.anySelected = selected;
+            this.latestInstalledAt = latest;
+        }
+    }
+
+    // ---------------------------------------------------------- mod identity
+
+    /**
+     * Persists a mod's display logo (from its GenLauncher manifest or ModDB
+     * profile) next to the installed versions so the installed-list cards can
+     * show real art without a network round trip per rebuild.
+     */
+    static void writeLogo(String gameFolder, String modName, String logoUrl) {
+        if (logoUrl == null || logoUrl.isEmpty()) {
+            return;
+        }
+        try (java.io.FileWriter w = new java.io.FileWriter(
+                 new File(modsRoot(gameFolder), modName + ".logo"), false)) {
+            w.write(logoUrl);
+            w.write("\n");
+        } catch (IOException e) {
+            // Cosmetic only: the card falls back to the placeholder icon.
+        }
+    }
+
+    static String readLogo(String gameFolder, String modName) {
+        File f = new File(modsRoot(gameFolder), modName + ".logo");
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f))) {
+            String line = r.readLine();
+            return (line != null && !line.trim().isEmpty()) ? line.trim() : null;
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -125,10 +167,35 @@ final class ModInstaller {
     }
 
     private static final String MODS_DIR_NAME = "Mods";
-    /** Sidecar holding the ModDB file page path for update checks. */
-    static final String META_SUFFIX = ".moddb_meta";
+    /**
+     * Sidecar holding a component's repository origin for update checks.
+     * Lines: manifest URL, installed Version string, component kind int.
+     * (The pre-1.6 ".moddb_meta" sidecars are intentionally not read: the
+     * ModDB backend is gone, so those installs keep working as
+     * update-unaware imports.)
+     */
+    static final String META_SUFFIX = ".genlauncher_meta";
     /** Big archive format magic: every .big starts with these four bytes. */
     private static final long BIGF_MAGIC = 0x42494746L; // "BIGF"
+    // Layer storage inside one mod family dir. Pristine component trees are
+    // never launched directly; activation merges them into ACTIVE_DIR_NAME.
+    static final String LAYERS_DIR_NAME = "+layers";
+    static final String ACTIVE_DIR_NAME = "+active";
+    private static final String LAYERS_ENABLED_NAME = "+layers_enabled";
+    private static final String FINGERPRINT_NAME = ".fingerprint";
+
+    /** One installed repository component's recorded origin. */
+    static final class ComponentMeta {
+        final String manifestUrl;
+        final String version;
+        final int kind;
+
+        ComponentMeta(String manifestUrl, String version, int kind) {
+            this.manifestUrl = manifestUrl;
+            this.version = version;
+            this.kind = kind;
+        }
+    }
 
     // ------------------------------------------------------------ discovery
 
@@ -137,19 +204,23 @@ final class ModInstaller {
     }
 
     /**
-     * GeneralsX @feature 16/09/2026 Writes the metadata sidecar alongside an
-     * installed leaf so its origin (ModDB file page) survives across
+     * Writes the metadata sidecar alongside an installed component so its
+     * repository origin (manifest URL + version + kind) survives across
      * sessions — the input to update checks, and the distinguishing mark
-     * between a ModDB-installed version and a storage import.
+     * between a repository install and a storage import.
      */
-    static void writeMeta(File fileDir, String filePagePath) {
-        if (filePagePath == null || filePagePath.isEmpty()) {
+    static void writeMeta(File fileDir, String manifestUrl, String version, int kind) {
+        if (manifestUrl == null || manifestUrl.isEmpty()) {
             return; // local import: no origin, no update path
         }
         try (java.io.FileWriter w = new java.io.FileWriter(
                  new File(fileDir.getParentFile(),
                           fileDir.getName() + META_SUFFIX), false)) {
-            w.write(filePagePath);
+            w.write(manifestUrl);
+            w.write("\n");
+            w.write(version != null ? version : "");
+            w.write("\n");
+            w.write(Integer.toString(kind));
             w.write("\n");
         } catch (IOException e) {
             // Sidecar is an optimization, not a correctness requirement:
@@ -157,12 +228,29 @@ final class ModInstaller {
         }
     }
 
-    /** Reads the sidecar from a version folder; null when absent/empty. */
-    static String readMeta(File versionDir, String leafName) {
-        File meta = new File(versionDir, leafName + META_SUFFIX);
+    /** Legacy two-arg form: repository base components default to KIND_MOD. */
+    static void writeMeta(File fileDir, String manifestUrl) {
+        writeMeta(fileDir, manifestUrl, "", GenLauncherReposClient.KIND_MOD);
+    }
+
+    /** Reads the sidecar beside a component folder; null when absent/empty. */
+    static ComponentMeta readMeta(File parentDir, String leafName) {
+        File meta = new File(parentDir, leafName + META_SUFFIX);
         try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(meta))) {
-            String line = r.readLine();
-            return (line != null && !line.trim().isEmpty()) ? line.trim() : null;
+            String url = r.readLine();
+            if (url == null || url.trim().isEmpty()) {
+                return null;
+            }
+            String version = r.readLine();
+            String kindLine = r.readLine();
+            int kind = GenLauncherReposClient.KIND_MOD;
+            try {
+                kind = Integer.parseInt(kindLine.trim());
+            } catch (Exception ignored) {
+                // single-line or unversioned sidecar: mod kind, no version
+            }
+            return new ComponentMeta(url.trim(),
+                version != null ? version.trim() : "", kind);
         } catch (Exception e) {
             return null;
         }
@@ -241,7 +329,7 @@ final class ModInstaller {
                 File[] children = e.listFiles();
                 if (children != null) {
                     for (File c : children) {
-                        if (c.isDirectory() && hasBigFile(c)) {
+                        if (c.isDirectory() && !isManagedDir(c) && hasBigFile(c)) {
                             versions.add(new InstalledMod(c.getName(), c.getAbsolutePath(),
                                 dirSize(c), c.getAbsolutePath().equals(launchPath)));
                         }
@@ -304,6 +392,196 @@ final class ModInstaller {
         return total;
     }
 
+    /** True for launcher-managed dirs that are never mod versions. */
+    private static boolean isManagedDir(File dir) {
+        String name = dir.getName();
+        return LAYERS_DIR_NAME.equals(name) || ACTIVE_DIR_NAME.equals(name);
+    }
+
+    // ------------------------------------------------------- patch/addon layers
+
+    /**
+     * GeneralsX @feature 18/09/2026 GenLauncher-style layers. The engine
+     * mounts exactly one -mod directory, so patches and addons cannot ride
+     * along as separate mounts — they merge launcher-side at activation:
+     *
+     *   Mods/<Mod>/<Version>/      pristine base, never launched with layers
+     *   Mods/<Mod>/+layers/<L>/    pristine layer trees (patch/addon each own dir)
+     *   Mods/<Mod>/+active/        merged launch tree: base + enabled layers
+     *   Mods/<Mod>/+layers_enabled one enabled layer dir name per line
+     *
+     * With no layers enabled there is no merge at all: activation selects
+     * the base version dir directly, exactly like a plain install.
+     */
+
+    static File layersRoot(String gameFolder, String modName) {
+        return new File(new File(modsRoot(gameFolder), modName), LAYERS_DIR_NAME);
+    }
+
+    static File activeDir(String gameFolder, String modName) {
+        return new File(new File(modsRoot(gameFolder), modName), ACTIVE_DIR_NAME);
+    }
+
+    /** Pristine home for one installed layer; created on demand. */
+    static File prepareLayerDir(String gameFolder, String modName,
+                                String layerName) throws IOException {
+        File root = layersRoot(gameFolder, modName);
+        if (!root.isDirectory() && !root.mkdirs()) {
+            throw new IOException("cannot create " + root);
+        }
+        File dir = safeDir(root, layerName);
+        if (dir.exists()) {
+            deleteRecursively(dir);
+        }
+        if (!dir.mkdirs()) {
+            throw new IOException("cannot create " + dir);
+        }
+        return dir;
+    }
+
+    /** Names of installed layers (pristine dirs under +layers/). */
+    static List<String> listLayers(String gameFolder, String modName) {
+        List<String> out = new ArrayList<>();
+        File[] entries = layersRoot(gameFolder, modName).listFiles();
+        if (entries != null) {
+            for (File e : entries) {
+                if (e.isDirectory()) {
+                    out.add(e.getName());
+                }
+            }
+            out.sort(String.CASE_INSENSITIVE_ORDER);
+        }
+        return out;
+    }
+
+    /** Subset of installed layers the user enabled, in file order. */
+    static List<String> readEnabledLayers(String gameFolder, String modName) {
+        List<String> out = new ArrayList<>();
+        File f = new File(new File(modsRoot(gameFolder), modName), LAYERS_ENABLED_NAME);
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                line = line.trim();
+                if (!line.isEmpty()
+                        && new File(layersRoot(gameFolder, modName), line).isDirectory()
+                        && !out.contains(line)) {
+                    out.add(line);
+                }
+            }
+        } catch (Exception ignored) {
+            // No file yet: nothing enabled.
+        }
+        return out;
+    }
+
+    static void writeEnabledLayers(String gameFolder, String modName,
+                                   List<String> enabled) {
+        File f = new File(new File(modsRoot(gameFolder), modName), LAYERS_ENABLED_NAME);
+        try (java.io.FileWriter w = new java.io.FileWriter(f, false)) {
+            for (String name : enabled) {
+                w.write(name);
+                w.write("\n");
+            }
+        } catch (IOException ignored) {
+            // Enablement is a preference; a failed write just doesn't stick.
+        }
+    }
+
+    /**
+     * Resolves the directory to launch for a base version: the base dir
+     * itself when no layers are enabled, otherwise the merged +active/
+     * tree (rebuilt only when its fingerprint is stale).
+     */
+    static String resolveLaunchDir(String gameFolder, String modName,
+                                   String baseDirPath) throws IOException {
+        List<String> enabled = readEnabledLayers(gameFolder, modName);
+        if (enabled.isEmpty()) {
+            return baseDirPath;
+        }
+        File baseDir = new File(baseDirPath);
+        List<File> layerDirs = new ArrayList<>();
+        for (String name : enabled) {
+            layerDirs.add(new File(layersRoot(gameFolder, modName), name));
+        }
+        File active = activeDir(gameFolder, modName);
+        String fingerprint = fingerprintFor(baseDir, layerDirs);
+        if (fingerprint.equals(readFingerprint(active))) {
+            return active.getAbsolutePath(); // merge is current: reuse it
+        }
+        // Rebuild: pristine base first, then each enabled layer in order —
+        // later layers overwrite earlier files, base never loses.
+        deleteRecursively(active);
+        if (!active.mkdirs()) {
+            throw new IOException("cannot create " + active);
+        }
+        copyTreeFull(baseDir, active);
+        for (File layer : layerDirs) {
+            copyTreeFull(layer, active);
+        }
+        writeFingerprint(active, fingerprint);
+        return active.getAbsolutePath();
+    }
+
+    /** Drops the merged tree (frees its disk); rebuilt on next activation. */
+    static void dropActiveDir(String gameFolder, String modName) {
+        deleteRecursively(activeDir(gameFolder, modName));
+    }
+
+    private static String fingerprintFor(File baseDir, List<File> layerDirs) {
+        StringBuilder sb = new StringBuilder(baseDir.getName());
+        sb.append('|').append(baseDir.lastModified());
+        for (File layer : layerDirs) {
+            sb.append('|').append(layer.getName()).append('@').append(layer.lastModified());
+            ComponentMeta meta = readMeta(layer.getParentFile(), layer.getName());
+            if (meta != null) {
+                sb.append('@').append(meta.version);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String readFingerprint(File active) {
+        try (java.io.BufferedReader r = new java.io.BufferedReader(
+                 new java.io.FileReader(new File(active, FINGERPRINT_NAME)))) {
+            String line = r.readLine();
+            return line != null ? line : "";
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static void writeFingerprint(File active, String fingerprint) {
+        try (java.io.FileWriter w = new java.io.FileWriter(
+                 new File(active, FINGERPRINT_NAME), false)) {
+            w.write(fingerprint);
+            w.write("\n");
+        } catch (IOException ignored) {
+            // A missing fingerprint just rebuilds next time: slow, not wrong.
+        }
+    }
+
+    /** Full recursive copy (unlike copyModTree: every file rides along). */
+    private static void copyTreeFull(File src, File dst) throws IOException {
+        File[] entries = src.listFiles();
+        if (entries == null) {
+            return;
+        }
+        if (!dst.isDirectory() && !dst.mkdirs()) {
+            throw new IOException("cannot create " + dst);
+        }
+        for (File e : entries) {
+            if (e.getName().equals(FINGERPRINT_NAME)) {
+                continue; // merge bookkeeping never merges into itself
+            }
+            File target = new File(dst, e.getName());
+            if (e.isDirectory()) {
+                copyTreeFull(e, target);
+            } else {
+                copyFile(e, target);
+            }
+        }
+    }
+
     // ------------------------------------------------------- install/delete
 
     /**
@@ -313,25 +591,41 @@ final class ModInstaller {
      */
     static File downloadAndInstall(String url, String gameFolder, String modName,
                                    String fileBaseName, Listener listener) throws Exception {
-        return downloadAndInstall(url, gameFolder, modName, fileBaseName, null, listener);
+        return downloadAndInstall(url, gameFolder, modName, fileBaseName,
+            null, "", GenLauncherReposClient.KIND_MOD, listener);
     }
 
     /**
-     * Same, and records the ModDB file page in the version sidecar so the
-     * panel can offer "update available" later.
+     * Same, and records the repository manifest URL + version in the
+     * component sidecar so the panel can offer "update available" later.
      */
     static File downloadAndInstall(String url, String gameFolder, String modName,
-                                   String fileBaseName, String filePagePath,
+                                   String fileBaseName, String manifestUrl,
+                                   String version, int kind,
                                    Listener listener) throws Exception {
         File fileDir = prepareFileDir(gameFolder, modName, fileBaseName);
-        File tmp = new File(fileDir.getParentFile(), fileBaseName + ".part");
+        downloadAndExtractTo(url, fileDir, fileBaseName, listener);
+        collapseSingleRoot(fileDir);
+        writeMeta(fileDir, manifestUrl, version, kind);
+        return fileDir;
+    }
+
+    /**
+     * GeneralsX @feature 18/09/2026 Download+extract core shared by base
+     * versions and +layers/: streams url into a temp partial beside the
+     * target, extracts every .big inside, and leaves the temp cleaned up.
+     * The caller owns the target dir (prepared) and any sidecar.
+     */
+    static void downloadAndExtractTo(String url, File fileDir, String tmpBase,
+                                     Listener listener) throws Exception {
+        File tmp = new File(fileDir.getParentFile(), tmpBase + ".part");
         File staged = null;
         try {
             downloadResumable(url, tmp, listener);
             if (listener != null) {
                 listener.onPhase("extracting");
             }
-            // The temp name carries no archive extension, and ModDB/repo URLs
+            // The temp name carries no archive extension, and repo URLs
             // do not reliably end in one either — sniff the file magic and
             // stage it under a name extract() recognizes.
             staged = ensureKnownArchiveExtension(tmp);
@@ -340,8 +634,6 @@ final class ModInstaller {
                 throw new IOException("no .big archives found in this download");
             }
             collapseSingleRoot(fileDir);
-            writeMeta(fileDir, filePagePath);
-            return fileDir;
         } finally {
             tmp.delete();
             if (staged != null && !staged.equals(tmp)) {
@@ -646,7 +938,7 @@ final class ModInstaller {
             conn = (HttpURLConnection) new URL(url).openConnection();
             conn.setConnectTimeout(15000);
             conn.setReadTimeout(30000);
-            conn.setRequestProperty("User-Agent", ModDbClient.USER_AGENT);
+            conn.setRequestProperty("User-Agent", GenLauncherReposClient.USER_AGENT);
             if (have > 0) {
                 conn.setRequestProperty("Range", "bytes=" + have + "-");
             }
@@ -720,7 +1012,7 @@ final class ModInstaller {
     private static void download(String url, File dest, Listener listener) throws IOException {
         File partial = new File(dest.getParentFile(), dest.getName() + ".dl");
         long have = partial.isFile() ? partial.length() : 0;
-        if (have > ModDbClient.MAX_DOWNLOAD_BYTES) {
+        if (have > GenLauncherReposClient.MAX_DOWNLOAD_BYTES) {
             partial.delete(); // corrupt scratch from an interrupted huge file
             have = 0;
         }
@@ -735,7 +1027,7 @@ final class ModInstaller {
                 long[] sizeHolder = new long[1];
                 InputStream in;
                 try {
-                    in = ModDbClient.openDownloadStream(url, have, sizeHolder, holder);
+                    in = GenLauncherReposClient.openDownloadStream(url, have, sizeHolder, holder);
                 } catch (IOException e) {
                     if (attempt == 0 && have > 0) {
                         // Resume refused (HTTP 416) — restart cleanly once.
@@ -747,7 +1039,7 @@ final class ModInstaller {
                 }
                 conn = holder[0];
                 long total = sizeHolder[0];
-                if (total > ModDbClient.MAX_DOWNLOAD_BYTES) {
+                if (total > GenLauncherReposClient.MAX_DOWNLOAD_BYTES) {
                     throw new IOException("file larger than the 8 GB safety cap");
                 }
                 if (total > 0 && total <= have) {
@@ -763,7 +1055,7 @@ final class ModInstaller {
                     int n;
                     while ((n = in.read(buf)) > 0) {
                         done += n;
-                        if (done > ModDbClient.MAX_DOWNLOAD_BYTES) {
+                        if (done > GenLauncherReposClient.MAX_DOWNLOAD_BYTES) {
                             throw new IOException("file larger than the 8 GB safety cap");
                         }
                         out.write(buf, 0, n);
@@ -774,7 +1066,7 @@ final class ModInstaller {
                 }
                 break; // clean end of stream
             } finally {
-                ModDbClient.disconnectQuietly(conn);
+                GenLauncherReposClient.disconnectQuietly(conn);
             }
         }
 

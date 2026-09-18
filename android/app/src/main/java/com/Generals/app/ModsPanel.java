@@ -16,36 +16,27 @@
 **	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-// GeneralsX @feature Android port mod-launcher 14/09/2026
+// GeneralsX @feature Android port mod-launcher 18/09/2026
 //
-// The mod manager, as a reusable page: everything around "play this mod,
-// not vanilla". Hosted twice — full-screen by ModManagerActivity (standalone
-// launcher-icon entry) and as Setup's Mods bottom-navigation tab — with the
-// host supplying only three operations through Host: start the game with the
-// current selection, offer the game-folder picker when none is set, and
-// surface SAF results picked in onInstallFromStorage.
+// The mod manager, as a reusable page — GenLauncher-repository only. Every
+// mod comes from the curated GenLauncher manifest tree
+// (GenLauncherReposClient): the mod is the row, its downloaded base
+// versions expand beneath it, and its ModPatches/ModAddons install as
+// layers over the active base (ModInstaller.resolveLaunchDir merges them
+// at activation; the engine still mounts a single -mod dir).
 //
-//   Installed view -- <gameFolder>/Mods/* grouped per ModDB profile,
-//                     GenLauncher-style: the mod is the row, its downloaded
-//                     versions expand beneath it, each separately playable
-//                     and deletable, and a per-group update check compares
-//                     the installed release against ModDB's current one.
-//   Browse view    -- ModDB's C&C: Generals Zero Hour index (search +
-//                     pagination + sorting); a card opens the detail page
-//                     (description, screenshots strip, rating/downloads),
-//                     then the release list; picking a release downloads and
-//                     installs it as a NEW version leaf beside the others.
+//   Installed view  -- <gameFolder>/Mods/* families: the mod is an
+//                      independent card (logo, active version, size, date),
+//                      an update badge when the manifest moved, and direct
+//                      Play / Update / Versions actions.
+//   Repository view -- the curated index (local search filter, manifest
+//                      order); a row opens the detail page (hero art,
+//                      version, base install/update, patch + addon layers
+//                      with per-layer install/update/enable).
 //
-// Every version mounts through the engine's own -mod path at
-// archive-overwrite priority. The game folder's retail .big files are never
-// touched: a version is one folder, removed with one button; vanilla is
-// "Clear Selection"; switching versions never destroys another.
-//
-// GeneralsX @feature 16/09/2026 GenLauncher-parity pass: grouped versions,
-// update badges with one-tap access to the new release, screenshots and
-// rating/downloads on the detail page, and origin sidecars
-// (<version>.moddb_meta) that survive across sessions so update checks need
-// no re-download to know what is installed.
+// Every component records its manifest URL + version in a sidecar
+// (.genlauncher_meta), so update checks compare installed versions
+// against live manifests with no re-download.
 
 package com.Generals.app;
 
@@ -58,7 +49,6 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.EditText;
-import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -71,7 +61,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -91,54 +80,56 @@ final class ModsPanel extends LinearLayout {
         void requestGameFolder();
     }
 
-    // Screens; a tiny hand-rolled stack because the flow is exactly 4 deep.
+    // Screens; a tiny hand-rolled stack because the flow is exactly 3 deep.
     private static final int SCREEN_INSTALLED = 0;
-    private static final int SCREEN_BROWSE = 1;
+    private static final int SCREEN_REPO = 1;
     private static final int SCREEN_DETAIL = 2;
-    private static final int SCREEN_FILES = 3;
 
     static final int REQ_PICK_ARCHIVE = 4101;
     static final int REQ_PICK_FOLDER = 4102;
-
-    private static final int SORT_POPULAR = 0;
-    private static final int SORT_RATING = 1;
-    private static final int SORT_RECENT = 2;
-    private static final int SORT_NAME = 3;
 
     private final Host host;
     private final boolean withAppBar; // standalone activity vs Setup tab
 
     private LinearLayout listHost;
+    private LinearLayout resultsHost; // repository results, below the search card
     private TextView statusBar;
     private String gameFolder;
-    private String launchPath; // mod dir currently in mod_launch.cfg, or null
+    private String launchPath; // resolved mod dir in mod_launch.cfg, or null
+    private String launchBase; // pristine base dir (line 2), for selection state
     private int screen = SCREEN_INSTALLED;
 
-    // Browse state; kept across rebuilds so rotation doesn't lose the list.
-    private List<ModDbClient.ModSummary> results = new ArrayList<>();
-    private int browsePage = 1;
-    private boolean hasMorePages = false;
-    private String lastQuery = null; // null = "show all", else search term
-    private int sortMode = SORT_POPULAR;
-
-    // Detail/files context.
-    private ModDbClient.ModSummary detailMod;
-    private ModDbClient.ModDetails detailData;
-    private List<ModDbClient.ModFile> detailFiles;
-
-    // GeneralsX @feature 17/09/2026 GenLauncher repository source: the
-    // curated manifest (github.com/p0ls3r/GenLauncherModsData) plus the
-    // resolved version of the mod currently being installed from it.
-    private static final int SOURCE_MODDB = 0;
-    private static final int SOURCE_GENLAUNCHER = 1;
-    private int browseSource = SOURCE_MODDB;
+    // Repository state. The index is fetched once per panel life and cached;
+    // component manifests resolve on demand into manifestCache.
     private List<GenLauncherReposClient.RepoMod> repoMods;
-    private GenLauncherReposClient.RepoVersion installingRepoVersion;
-    private String installingRepoName;
+    private boolean repoLoading = false;
+    private String repoError;
+    private String repoQuery = "";
+    private final Map<String, GenLauncherReposClient.RepoVersion> manifestCache = new HashMap<>();
 
-    // Install context, kept so a failed install can offer resumable retry.
-    private ModDbClient.ModSummary installMod;
-    private ModDbClient.ModFile installFile;
+    // Detail context: the repository mod being shown.
+    private String detailName;
+    private GenLauncherReposClient.RepoMod detailMod;
+    private GenLauncherReposClient.RepoVersion detailBase;
+    private final List<LayerRow> detailLayers = new ArrayList<>();
+    private ModInstaller.ModGroup detailGroup; // installed family, or null
+    private boolean detailLoading = false;
+    private int detailReturn = SCREEN_INSTALLED;
+
+    /** One patch/addon row on the detail page. */
+    private static final class LayerRow {
+        String manifestUrl;
+        int kind;
+        GenLauncherReposClient.RepoVersion resolved; // null until fetched
+        String installedVersion;  // "" when not installed
+        boolean enabled;
+        String error;
+    }
+
+    // Install context: one repository component at a time.
+    private GenLauncherReposClient.RepoVersion installingComponent;
+    private String installingModName;
+    private boolean installingIsLayer;
     private String installBase;
     // Live views of the install progress card; nulled on rebuild so a stale
     // reference is never written to after the page changes.
@@ -146,11 +137,18 @@ final class ModsPanel extends LinearLayout {
     private ProgressBar installBar;
     private TextView installBytesView;
 
-    // GenLauncher-style installed state: expanded version lists and the
-    // per-group update verdicts (null = not checked yet).
+    // Installed state: expanded version lists, per-family update verdicts
+    // (missing = not checked yet), and per-layer verdicts keyed
+    // "<mod>\0<layerDir>".
     private final HashSet<String> expandedGroups = new HashSet<>();
-    private final Map<String, Boolean> updateByGroup = new HashMap<>();
+    private final Map<String, Boolean> updateByMod = new HashMap<>();
+    private final Map<String, Boolean> layerUpdateByKey = new HashMap<>();
     private boolean updateCheckRunning = false;
+    // Families with a newer release — the in-app update notice.
+    private final List<String> modsWithUpdates = new ArrayList<>();
+    // Installed base version per family (for "installed X · available Y").
+    private final Map<String, String> installedVersionByMod = new HashMap<>();
+    private final Map<String, String> availableVersionByMod = new HashMap<>();
 
     ModsPanel(Activity activity, Host host, boolean withAppBar) {
         super(activity);
@@ -160,7 +158,7 @@ final class ModsPanel extends LinearLayout {
         ThumbCache.setCacheDir(activity.getCacheDir());
         gameFolder = SetupActivity.getSavedGamePath(activity);
         launchPath = readLaunchCfg(activity);
-        restoreBrowsePrefs(activity);
+        launchBase = readLaunchBase(activity);
         rebuild();
     }
 
@@ -171,47 +169,13 @@ final class ModsPanel extends LinearLayout {
         gameFolder = SetupActivity.getSavedGamePath(host.activity());
     }
 
-    private void restoreBrowsePrefs(Activity activity) {
-        android.content.SharedPreferences prefs =
-            activity.getSharedPreferences(SetupActivity.PREFS_NAME, Activity.MODE_PRIVATE);
-        sortMode = clamp(prefs.getInt("mods_sort", SORT_POPULAR), SORT_POPULAR, SORT_NAME);
-        // The list itself is not persisted (a stale copy would fight the live
-        // site); only the tab the user was on, so re-entering lands sensibly.
-        // Embedded (Setup tab) always opens on Installed instead.
-        if (withAppBar) {
-            screen = prefs.getBoolean("mods_browsing", false) ? SCREEN_BROWSE : SCREEN_INSTALLED;
-        }
-    }
-
-    private void saveBrowsePrefs() {
-        android.content.SharedPreferences prefs =
-            host.activity().getSharedPreferences(SetupActivity.PREFS_NAME, Activity.MODE_PRIVATE);
-        prefs.edit()
-            .putInt("mods_sort", sortMode)
-            .putBoolean("mods_browsing", screen != SCREEN_INSTALLED)
-            .apply();
-    }
-
-    private static int clamp(int v, int min, int max) {
-        return v < min ? min : Math.min(v, max);
-    }
-
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        if (!withAppBar) {
-            // Embedded in Setup's scrolling column, the first measure pass
-            // arrives with UNSPECIFIED height; the panel's inner scrolling
-            // page needs a bounded viewport, so claim the visible screen
-            // height. Setup's ScrollView re-measures with the real viewport
-            // afterwards (fillViewport), which lands here as EXACTLY.
-            int hMode = MeasureSpec.getMode(heightMeasureSpec);
-            int hSize = MeasureSpec.getSize(heightMeasureSpec);
-            if (hMode == MeasureSpec.UNSPECIFIED || hSize == 0) {
-                android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
-                hSize = (int) (dm.heightPixels * 0.72f);
-            }
-            heightMeasureSpec = MeasureSpec.makeMeasureSpec(hSize, MeasureSpec.EXACTLY);
-        }
+        // GeneralsX @refactor Android port launcher-ui 17/09/2026 The panel
+        // now always lives inside a host scrolling page (the merged Home tab),
+        // so it measures as a normal WRAP_CONTENT child — no synthetic height
+        // claim (the old 0.72-screen hack) is needed or wanted: the host page
+        // owns the viewport.
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
     }
 
@@ -225,6 +189,8 @@ final class ModsPanel extends LinearLayout {
         Activity activity = host.activity();
         LinearLayout page;
         if (withAppBar) {
+            // Standalone activity: the panel owns the whole screen, so it
+            // carries its own app bar and scroller.
             setBackgroundColor(UiKit.color(activity, R.color.gen_background));
             InsetUtil.applySafeInsets(this);
             UiKit.appBar(this, activity.getString(R.string.mods_overline),
@@ -233,27 +199,26 @@ final class ModsPanel extends LinearLayout {
                 this::onRefresh);
             page = UiKit.scrollingPage(this);
         } else {
-            // GeneralsX @bugfix Android port launcher-ui 17/09/2026 Embedded
-            // mode used to build directly into the panel (a plain
-            // LinearLayout), which worked while Setup wrapped us in its own
-            // scroller. Since the panel became a full-height bottom tab (a
-            // direct MATCH_PARENT child of contentHost) the detail/files
-            // screens overflowed with no way to scroll. Wrap the content in
-            // the standard scrolling page in every mode.
-            page = UiKit.scrollingPage(this);
+            // Embedded in the host's scrolling page (merged Home tab): build
+            // flat — an inner ScrollView here would nest scrollers and
+            // swallow the host's scroll. The host page owns scrolling.
+            page = this;
+            // Merged-Home section title: the launch/graphics cards above end
+            // and the mod manager begins. Standalone mode already names the
+            // screen in its app bar, so only the embedded page needs this.
+            UiKit.sectionHeader(page, R.drawable.ic_gen_chip,
+                activity.getString(R.string.mods_window_title), false);
         }
 
-        // Tab row: Installed | Browse
+        // Tab row: Installed | Repository
         LinearLayout tabs = UiKit.buttonRow(page);
         addTabButton(tabs, screen == SCREEN_INSTALLED, R.string.mods_tab_installed, v -> {
             screen = SCREEN_INSTALLED;
-            saveBrowsePrefs();
             rebuild();
         });
-        addTabButton(tabs, screen != SCREEN_INSTALLED, R.string.mods_tab_browse, v -> {
+        addTabButton(tabs, screen != SCREEN_INSTALLED, R.string.mods_tab_repository, v -> {
             if (screen == SCREEN_INSTALLED) {
-                screen = SCREEN_BROWSE;
-                saveBrowsePrefs();
+                screen = SCREEN_REPO;
             }
             rebuild();
         });
@@ -267,19 +232,11 @@ final class ModsPanel extends LinearLayout {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         switch (screen) {
-            case SCREEN_BROWSE:
-                buildBrowseSearch();
-                if (browseSource == SOURCE_GENLAUNCHER && repoMods != null) {
-                    renderRepoMods();
-                } else if (results.isEmpty() && lastQuery != null) {
-                    runBrowse(lastQuery);
-                }
+            case SCREEN_REPO:
+                buildRepo();
                 break;
             case SCREEN_DETAIL:
                 buildDetail();
-                break;
-            case SCREEN_FILES:
-                buildFiles();
                 break;
             case SCREEN_INSTALLED:
             default:
@@ -331,7 +288,7 @@ final class ModsPanel extends LinearLayout {
             launchPath = null;
         }
 
-        List<ModInstaller.ModGroup> groups = ModInstaller.listGroups(gameFolder, launchPath);
+        List<ModInstaller.ModGroup> groups = ModInstaller.listGroups(gameFolder, selectionPath());
 
         LinearLayout launchCard = UiKit.card(listHost);
         UiKit.sectionHeader(launchCard, R.drawable.ic_gen_play,
@@ -351,83 +308,120 @@ final class ModsPanel extends LinearLayout {
             UiKit.supporting(launchCard, activity.getString(R.string.mods_launch_vanilla));
         }
 
-        LinearLayout card = UiKit.card(listHost);
-        UiKit.sectionHeader(card, R.drawable.ic_gen_chip,
+        // Header card: count + storage only. Each mod family gets its own
+        // independent card below (buildGroupCard), so the list scans as
+        // one mod = one card instead of rows nested in a shared container.
+        LinearLayout header = UiKit.card(listHost);
+        UiKit.sectionHeader(header, R.drawable.ic_gen_chip,
             activity.getString(R.string.mods_card_installed, groups.size()), false);
 
         if (freed > 1024) {
-            UiKit.supporting(card,
+            UiKit.supporting(header,
                 activity.getString(R.string.mods_storage_note, humanBytes(ModInstaller.freeBytes(gameFolder)))
                     + " \u00b7 " + activity.getString(R.string.mods_storage_freed, humanBytes(freed)));
         } else {
-            UiKit.supporting(card,
+            UiKit.supporting(header,
                 activity.getString(R.string.mods_storage_note, humanBytes(ModInstaller.freeBytes(gameFolder))));
         }
 
         if (groups.isEmpty()) {
-            UiKit.supporting(card, activity.getString(R.string.mods_none_installed));
-            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_download,
-                activity.getString(R.string.mods_tab_browse), () -> {
-                    screen = SCREEN_BROWSE;
-                    saveBrowsePrefs();
+            UiKit.supporting(header, activity.getString(R.string.mods_none_installed));
+            UiKit.button(header, UiKit.BTN_TONAL, R.drawable.ic_gen_download,
+                activity.getString(R.string.mods_tab_repository), () -> {
+                    screen = SCREEN_REPO;
                     rebuild();
                 });
         } else {
-            for (ModInstaller.ModGroup group : groups) {
-                card.addView(buildGroupSection(group));
+            // In-app update notice: the quiet check (or the manual one)
+            // found newer releases. Each updated mod is its own tappable
+            // row — one tap opens that mod's page, no browsing needed to
+            // reach the new file.
+            if (!modsWithUpdates.isEmpty()) {
+                LinearLayout notice = UiKit.card(listHost);
+                GradientBg.applyTinted(notice, R.color.gen_tertiary_container);
+                UiKit.sectionHeader(notice, R.drawable.ic_gen_refresh,
+                    activity.getString(R.string.mods_updates_notice_title,
+                        modsWithUpdates.size()), false);
+                UiKit.supporting(notice,
+                    activity.getString(R.string.mods_updates_tap_hint));
+                for (String updatedName : new ArrayList<>(modsWithUpdates)) {
+                    UiKit.listRow(notice, R.drawable.ic_gen_download,
+                        updatedName,
+                        activity.getString(R.string.mods_update_badge),
+                        () -> openRepoDetail(updatedName, SCREEN_INSTALLED));
+                }
             }
-            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_refresh,
+            for (ModInstaller.ModGroup group : groups) {
+                buildGroupCard(group);
+            }
+            UiKit.button(header, UiKit.BTN_TONAL, R.drawable.ic_gen_refresh,
                 activity.getString(R.string.mods_check_updates), this::checkUpdatesManually);
         }
-        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_folder,
+        // Install tools live in their own card so the header stays a
+        // two-line summary and the per-mod cards stay uniform.
+        LinearLayout tools = UiKit.card(listHost);
+        UiKit.button(tools, UiKit.BTN_TONAL, R.drawable.ic_gen_folder,
             activity.getString(R.string.mods_install_from_files), this::onInstallFromStorage);
-        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_folder,
+        UiKit.button(tools, UiKit.BTN_TONAL, R.drawable.ic_gen_folder,
             activity.getString(R.string.mods_import_folder), this::onImportExtractedFolder);
-        UiKit.supporting(card, activity.getString(R.string.mods_pick_archive_or_folder));
-        UiKit.supporting(card, activity.getString(R.string.mods_installed_hint));
+        UiKit.supporting(tools, activity.getString(R.string.mods_pick_archive_or_folder));
+        UiKit.supporting(tools, activity.getString(R.string.mods_installed_hint));
 
         // GenLauncher behavior: updates are noticed without the user asking.
         // Quiet on failure — a flaky network just leaves no badge, and the
         // manual check above reports loudly instead.
-        if (!updateCheckRunning && !groups.isEmpty() && !updateByGroup.containsKey("__done__")
-                && updateByGroup.isEmpty()) {
-            checkUpdates(groups, null);
+        if (!updateCheckRunning && !groups.isEmpty() && updateByMod.isEmpty()) {
+            checkRepoUpdates(groups, null);
         }
     }
 
-    /** One mod family: header row (tap = expand versions) + version rows. */
-    private View buildGroupSection(ModInstaller.ModGroup group) {
+    /**
+     * One mod family as an independent card: logo, name, active version,
+     * size, install date, a tappable update badge when a newer release
+     * exists, and compact Play/Update/Versions actions — the version list
+     * stays expandable for the multi-version case.
+     */
+    private void buildGroupCard(ModInstaller.ModGroup group) {
         Activity activity = host.activity();
-        LinearLayout section = new LinearLayout(activity);
-        section.setOrientation(LinearLayout.VERTICAL);
+        // Independent card per mod (not a row nested in the header card),
+        // so the Installed list scans as one mod = one card.
+        LinearLayout card = UiKit.card(listHost);
 
-        LinearLayout groupRow = new LinearLayout(activity);
-        groupRow.setOrientation(LinearLayout.HORIZONTAL);
-        groupRow.setGravity(Gravity.CENTER_VERTICAL);
-        groupRow.setClickable(true);
-        groupRow.setFocusable(true);
-        int pad = UiKit.dp(activity, 10f);
-        groupRow.setPadding(pad, pad, pad, pad);
-        GradientBg.apply(groupRow);
-        groupRow.setOnClickListener(v -> {
-            if (!expandedGroups.remove(group.modName)) {
-                expandedGroups.add(group.modName);
-            }
-            rebuild();
-        });
-        section.addView(groupRow, new LinearLayout.LayoutParams(
+        // Header: logo + name/meta column + update badge.
+        LinearLayout headerRow = new LinearLayout(activity);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(headerRow, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView arrow = new TextView(activity);
-        arrow.setText(expandedGroups.contains(group.modName) ? "\u25be" : "\u25b8");
-        arrow.setTextSize(18f);
-        arrow.setTextColor(UiKit.color(activity, R.color.gen_on_surface_faint));
-        arrow.setPadding(0, 0, UiKit.dp(activity, 10f), 0);
-        groupRow.addView(arrow);
+        final ImageView logo = new ImageView(activity);
+        logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        logo.setContentDescription(group.modName);
+        int logoSize = UiKit.dp(activity, 48f);
+        android.graphics.drawable.GradientDrawable logoBg =
+            new android.graphics.drawable.GradientDrawable();
+        logoBg.setCornerRadius(UiKit.dp(activity, 12f));
+        logoBg.setColor(UiKit.color(activity, R.color.gen_surface_container_highest));
+        logo.setBackground(logoBg);
+        logo.setImageResource(R.drawable.ic_gen_chip);
+        logo.setImageTintList(android.content.res.ColorStateList.valueOf(
+            UiKit.color(activity, R.color.gen_on_surface_faint)));
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(logoSize, logoSize);
+        logoLp.setMarginEnd(UiKit.dp(activity, 12f));
+        headerRow.addView(logo, logoLp);
+        String logoUrl = ModInstaller.readLogo(gameFolder, group.modName);
+        if (logoUrl != null) {
+            ThumbCache.load(logoUrl, bmp -> logo.post(() -> {
+                if (bmp != null && !bmp.isRecycled()) {
+                    logo.setImageBitmap(bmp);
+                    logo.setImageTintList(null);
+                }
+            }));
+        }
 
         LinearLayout textCol = new LinearLayout(activity);
         textCol.setOrientation(LinearLayout.VERTICAL);
-        groupRow.addView(textCol, new LinearLayout.LayoutParams(0,
+        headerRow.addView(textCol, new LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         TextView title = new TextView(activity);
@@ -435,55 +429,194 @@ final class ModsPanel extends LinearLayout {
         title.setTextSize(15f);
         title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         title.setTextColor(UiKit.color(activity, R.color.gen_on_surface));
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         textCol.addView(title);
 
+        // Meta line: active version (or count) + size + install date —
+        // short by design; the version list carries the rest.
         StringBuilder meta = new StringBuilder();
-        meta.append(activity.getString(R.string.mods_group_versions, group.versions.size()));
+        ModInstaller.InstalledMod active = null;
+        for (ModInstaller.InstalledMod v : group.versions) {
+            if (v.selected) {
+                active = v;
+                break;
+            }
+        }
+        if (active != null) {
+            meta.append(activity.getString(R.string.mods_row_active, active.displayName));
+        } else if (group.versions.size() == 1) {
+            meta.append(group.versions.get(0).displayName);
+        } else {
+            meta.append(activity.getString(R.string.mods_group_versions, group.versions.size()));
+        }
         meta.append(" \u00b7 ").append(humanBytes(group.bytesUsed));
-        if (group.anySelected) {
-            meta.append(" \u00b7 ").append(activity.getString(R.string.mods_installed_active_badge));
+        if (group.latestInstalledAt > 0) {
+            meta.append(" \u00b7 ").append(android.text.format.DateFormat.getDateFormat(activity)
+                .format(new java.util.Date(group.latestInstalledAt)));
         }
         TextView metaView = new TextView(activity);
         metaView.setText(meta.toString());
         metaView.setTextSize(12f);
+        metaView.setSingleLine(true);
+        metaView.setEllipsize(android.text.TextUtils.TruncateAt.END);
         metaView.setTextColor(UiKit.color(activity, R.color.gen_on_surface_variant));
         textCol.addView(metaView);
 
-        Boolean update = updateByGroup.get(group.modName);
-        if (Boolean.TRUE.equals(update)) {
+        final boolean hasUpdate = Boolean.TRUE.equals(updateByMod.get(group.modName));
+        if (hasUpdate) {
             TextView badge = new TextView(activity);
             badge.setText(R.string.mods_update_badge);
             badge.setTextSize(12f);
             badge.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            badge.setSingleLine(true);
             badge.setTextColor(UiKit.color(activity, R.color.gen_tertiary));
             badge.setPadding(UiKit.dp(activity, 8f), UiKit.dp(activity, 3f),
                 UiKit.dp(activity, 8f), UiKit.dp(activity, 3f));
             GradientBg.applyTinted(badge, R.color.gen_tertiary_container);
-            groupRow.addView(badge);
+            // The badge is the update entry point: one tap opens the
+            // mod's page on the new release.
+            badge.setClickable(true);
+            badge.setFocusable(true);
+            badge.setOnClickListener(v -> openRepoDetail(group.modName, SCREEN_INSTALLED));
+            headerRow.addView(badge);
+        }
+
+        // Compact actions, two rows of two: four equal buttons in one row
+        // squeeze Arabic labels into ellipsis (observed on-device), while
+        // full-width stacked buttons would triple the card height. Play +
+        // Update first (the moves that matter), Versions + Delete second.
+        LinearLayout row1 = new LinearLayout(activity);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        card.addView(row1, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        if (group.anySelected) {
+            addCardAction(row1, true, R.drawable.ic_gen_play,
+                activity.getString(R.string.mods_action_play_short),
+                () -> selectAndLaunch(group));
+        } else {
+            addCardAction(row1, false, R.drawable.ic_gen_play,
+                activity.getString(R.string.mods_action_set_active), () -> {
+                    selectForLaunch(group.modName, group.versions.get(0).dirPath, null);
+                });
+        }
+        addCardAction(row1, false, R.drawable.ic_gen_download,
+            activity.getString(R.string.mods_action_update),
+            () -> onUpdateCard(group));
+        LinearLayout row2 = new LinearLayout(activity);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        card.addView(row2, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        addCardAction(row2, false, R.drawable.ic_gen_broom,
+            activity.getString(R.string.mods_action_versions), () -> {
+                if (!expandedGroups.remove(group.modName)) {
+                    expandedGroups.add(group.modName);
+                }
+                rebuild();
+            });
+        addCardAction(row2, false, R.drawable.ic_gen_trash,
+            activity.getString(R.string.mods_action_delete),
+            () -> confirmDeleteFamily(group));
+
+        // Layers entry: patches & addons live on the detail page; the row
+        // shows how many are installed and how many are enabled.
+        int layerCount = ModInstaller.listLayers(gameFolder, group.modName).size();
+        if (layerCount > 0 || hasUpdate) {
+            int enabled = ModInstaller.readEnabledLayers(gameFolder, group.modName).size();
+            String supporting = layerCount == 0
+                ? activity.getString(R.string.mods_update_badge)
+                : activity.getString(R.string.mods_layers_state, enabled, layerCount);
+            UiKit.listRow(card, R.drawable.ic_gen_chip,
+                activity.getString(R.string.mods_layers_title), supporting,
+                () -> openRepoDetail(group.modName, SCREEN_INSTALLED));
         }
 
         if (expandedGroups.contains(group.modName)) {
             LinearLayout versions = new LinearLayout(activity);
             versions.setOrientation(LinearLayout.VERTICAL);
-            versions.setPadding(UiKit.dp(activity, 14f), 0, UiKit.dp(activity, 6f), 0);
+            versions.setPadding(0, UiKit.dp(activity, 8f), 0, 0);
             for (ModInstaller.InstalledMod version : group.versions) {
-                String supporting = activity.getString(R.string.mods_entry_size,
-                    humanBytes(version.bytesUsed));
-                if (version.selected) {
-                    supporting += " \u00b7 " + activity.getString(R.string.mods_installed_active_badge);
-                }
+                String supporting = humanBytes(version.bytesUsed)
+                    + (version.installedAt > 0
+                        ? " \u00b7 " + android.text.format.DateFormat.getDateFormat(activity)
+                              .format(new java.util.Date(version.installedAt))
+                        : "")
+                    + (version.selected
+                        ? " \u00b7 " + activity.getString(R.string.mods_installed_active_badge)
+                        : "");
                 UiKit.listRow(versions, R.drawable.ic_gen_chip, version.displayName, supporting,
                     () -> onVersionClicked(group, version));
             }
-            section.addView(versions, new LinearLayout.LayoutParams(
+            card.addView(versions, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         }
-        return section;
+    }
+
+    /**
+     * One compact weighted action for a mod card's horizontal row: small
+     * pill button, single-line label, equal share of the width.
+     */
+    private void addCardAction(LinearLayout row, boolean primary, int iconRes,
+                               String label, Runnable onClick) {
+        Activity activity = host.activity();
+        com.google.android.material.button.MaterialButton b =
+            new com.google.android.material.button.MaterialButton(activity);
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setTextSize(13f);
+        b.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        b.setMaxLines(1);
+        b.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        b.setCornerRadius(UiKit.dp(activity, 20));
+        b.setInsetTop(0);
+        b.setInsetBottom(0);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setMinHeight(UiKit.dp(activity, 40));
+        int hPad = UiKit.dp(activity, 10);
+        int vPad = UiKit.dp(activity, 8);
+        b.setPadding(hPad, vPad, hPad, vPad);
+        b.setGravity(Gravity.CENTER);
+        b.setElevation(0f);
+        b.setStateListAnimator(null);
+        b.setStrokeWidth(0);
+        if (iconRes != 0) {
+            android.graphics.drawable.Drawable icon =
+                androidx.core.content.ContextCompat.getDrawable(activity, iconRes);
+            b.setIcon(icon);
+            b.setIconSize(UiKit.dp(activity, 18));
+            b.setIconPadding(UiKit.dp(activity, 6));
+            b.setIconGravity(
+                com.google.android.material.button.MaterialButton.ICON_GRAVITY_TEXT_START);
+        }
+        if (primary) {
+            b.setBackgroundTintList(UiKit.tint(activity,
+                R.color.gen_primary, R.color.gen_container_disabled));
+            b.setTextColor(UiKit.tint(activity,
+                R.color.gen_on_primary, R.color.gen_on_surface_disabled));
+            b.setIconTint(UiKit.tint(activity,
+                R.color.gen_on_primary, R.color.gen_on_surface_disabled));
+        } else {
+            b.setBackgroundTintList(UiKit.tint(activity,
+                R.color.gen_surface_container_high, R.color.gen_container_disabled));
+            b.setTextColor(UiKit.tint(activity,
+                R.color.gen_on_surface, R.color.gen_on_surface_disabled));
+            b.setIconTint(UiKit.tint(activity,
+                R.color.gen_primary, R.color.gen_on_surface_disabled));
+        }
+        b.setOnClickListener(v -> onClick.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        if (row.getChildCount() > 0) {
+            lp.setMarginStart(UiKit.dp(activity, 6f));
+        }
+        lp.topMargin = UiKit.dp(activity, 10f);
+        row.addView(b, lp);
     }
 
     private void onVersionClicked(ModInstaller.ModGroup group, ModInstaller.InstalledMod version) {
         if (version.selected) {
-            onLaunchGame(); // tapping the active version launches
+            selectAndLaunch(group); // tapping the active version launches
             return;
         }
         Activity activity = host.activity();
@@ -495,24 +628,30 @@ final class ModsPanel extends LinearLayout {
                 .setTitle(group.modName + " \u2014 " + version.displayName)
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
-                        selectForLaunch(version.dirPath);
+                        selectForLaunch(group.modName, version.dirPath, this::onLaunchGame);
                     } else {
-                        confirmDelete(version);
+                        confirmDelete(group, version);
                     }
                 })
                 .show();
     }
 
-    private void confirmDelete(ModInstaller.InstalledMod version) {
+    private void confirmDelete(ModInstaller.ModGroup group, ModInstaller.InstalledMod version) {
         Activity activity = host.activity();
         new android.app.AlertDialog.Builder(activity)
                 .setTitle(activity.getString(R.string.mods_delete_title, version.displayName))
                 .setMessage(activity.getString(R.string.mods_delete_body, version.displayName))
                 .setPositiveButton(R.string.mods_delete_confirm, (d, w) -> {
                     ModInstaller.deleteRecursively(new File(version.dirPath));
-                    if (version.selected) {
+                    // The merged tree (if any) is stale without its base, and
+                    // a launch pointer into this family no longer resolves.
+                    ModInstaller.dropActiveDir(gameFolder, group.modName);
+                    if (launchPath != null && launchPath.startsWith(
+                            new File(gameFolder, "Mods" + File.separator + group.modName)
+                                .getAbsolutePath())) {
                         clearLaunchCfg();
                         launchPath = null;
+                        launchBase = null;
                     }
                     rebuild();
                 })
@@ -520,70 +659,109 @@ final class ModsPanel extends LinearLayout {
                 .show();
     }
 
+    /**
+     * GeneralsX @feature 18/09/2026 Whole-family delete from the card: every
+     * version, every layer, the merged tree, sidecars and logo go in one
+     * confirmed step. The retail game files are elsewhere and untouched.
+     */
+    private void confirmDeleteFamily(ModInstaller.ModGroup group) {
+        Activity activity = host.activity();
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle(activity.getString(R.string.mods_delete_title, group.modName))
+                .setMessage(activity.getString(R.string.mods_delete_body,
+                    group.modName + " (" + activity.getString(
+                        R.string.mods_group_versions, group.versions.size()) + ")"))
+                .setPositiveButton(R.string.mods_delete_confirm, (d, w) -> {
+                    ModInstaller.deleteRecursively(new File(gameFolder,
+                        "Mods" + File.separator + group.modName));
+                    new File(ModInstaller.modsRoot(gameFolder),
+                        group.modName + ".logo").delete();
+                    if (launchPath != null && launchPath.startsWith(
+                            new File(gameFolder, "Mods" + File.separator + group.modName)
+                                .getAbsolutePath())) {
+                        clearLaunchCfg();
+                        launchPath = null;
+                        launchBase = null;
+                    }
+                    updateByMod.remove(group.modName);
+                    modsWithUpdates.remove(group.modName);
+                    rebuild();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * GeneralsX @feature 18/09/2026 Per-card update entry. When the quiet
+     * check already flagged this mod, one tap opens its page on the new
+     * release; otherwise a single-family manifest check runs first and the
+     * card either gains its badge (page opens) or reports up to date.
+     */
+    private void onUpdateCard(ModInstaller.ModGroup group) {
+        if (Boolean.TRUE.equals(updateByMod.get(group.modName))) {
+            openRepoDetail(group.modName, SCREEN_INSTALLED);
+            return;
+        }
+        Activity activity = host.activity();
+        showStatus(activity.getString(R.string.mods_checking_updates));
+        updateByMod.remove(group.modName);
+        new Thread(() -> {
+            ensureIndexLoaded();
+            checkOneFamily(group);
+            activity.runOnUiThread(() -> {
+                hideStatus();
+                if (isFinishingSafe()) {
+                    return;
+                }
+                rebuild();
+                if (Boolean.TRUE.equals(updateByMod.get(group.modName))) {
+                    openRepoDetail(group.modName, SCREEN_INSTALLED);
+                } else {
+                    Toast.makeText(activity, R.string.mods_up_to_date,
+                        Toast.LENGTH_SHORT).show();
+                }
+            });
+        }, "gx-mod-update-one").start();
+    }
+
     // -------------------------------------------------------- update checks
 
     /**
-     * GenLauncher-style update detection: for every installed version with a
-     * ModDB origin sidecar, compare against the profile's current release
-     * list. One request per mod family; the pacing gate in ModDbClient keeps
-     * it well inside the site's limits. A group "has an update" when none of
-     * its installed file pages match any current file — the releases were
-     * replaced by a newer one.
+     * Manifest-driven update detection: for every installed component with
+     * a repository sidecar, fetch its manifest and compare versions. One
+     * cheap YAML GET per component; failures stay quiet (no badge) and the
+     * manual check reports loudly instead.
      */
-    private void checkUpdates(List<ModInstaller.ModGroup> groups, Runnable onDone) {
+    private void checkRepoUpdates(List<ModInstaller.ModGroup> groups, Runnable onDone) {
         updateCheckRunning = true;
         final List<ModInstaller.ModGroup> work = new ArrayList<>(groups);
         new Thread(() -> {
+            ensureIndexLoaded();
             for (ModInstaller.ModGroup group : work) {
-                if (updateByGroup.containsKey(group.modName)) {
+                if (updateByMod.containsKey(group.modName)) {
                     continue; // already checked this session
                 }
-                String profilePath = null;
-                java.util.Set<String> installedPages = new HashSet<>();
-                for (ModInstaller.InstalledMod version : group.versions) {
-                    String meta = ModInstaller.readMeta(
-                        new File(version.dirPath).getParentFile(), version.displayName);
-                    if (meta != null) {
-                        installedPages.add(meta);
-                        int cut = meta.indexOf("/downloads/");
-                        if (profilePath == null && cut > 0) {
-                            profilePath = meta.substring(0, cut);
-                        }
-                    }
-                }
-                if (profilePath == null) {
-                    // Storage import or pre-1.4 install: no origin to query.
-                    // Record a verdict anyway — a skipped group that leaves no
-                    // entry keeps updateByGroup empty, so every rebuild()
-                    // re-armed this auto-check: an infinite rebuild loop
-                    // (observed as ~80% CPU and a dead touch layer, because
-                    // the view tree was replaced between every touch DOWN
-                    // and UP).
-                    updateByGroup.put(group.modName, false);
-                    continue;
-                }
-                boolean update = false;
-                try {
-                    List<ModDbClient.ModFile> current = ModDbClient.fetchModFiles(profilePath);
-                    if (!current.isEmpty()) {
-                        update = true;
-                        for (ModDbClient.ModFile f : current) {
-                            if (installedPages.contains(f.pagePath)) {
-                                update = false; // one installed release still current
-                                break;
-                            }
-                        }
-                    }
-                } catch (Exception ignored) {
-                    // Quiet: a failed check just leaves no badge this session.
-                }
-                updateByGroup.put(group.modName, update);
+                checkOneFamily(group);
             }
             updateCheckRunning = false;
             Activity activity = host.activity();
+            final List<String> updated = new ArrayList<>();
+            for (ModInstaller.ModGroup g : work) {
+                if (Boolean.TRUE.equals(updateByMod.get(g.modName))) {
+                    updated.add(g.modName);
+                }
+            }
             activity.runOnUiThread(() -> {
                 if (!isFinishingSafe()) {
+                    modsWithUpdates.clear();
+                    modsWithUpdates.addAll(updated);
                     rebuild();
+                    if (!updated.isEmpty()) {
+                        Toast.makeText(activity,
+                            activity.getString(R.string.mods_updates_notice,
+                                updated.size()),
+                            Toast.LENGTH_LONG).show();
+                    }
                     if (onDone != null) {
                         onDone.run();
                     }
@@ -592,17 +770,98 @@ final class ModsPanel extends LinearLayout {
         }, "gx-mod-update-check").start();
     }
 
+    /** Checks one family: base versions plus installed layers. */
+    private void checkOneFamily(ModInstaller.ModGroup group) {
+        boolean update = false;
+        // Base: any installed MOD-kind sidecar whose manifest moved.
+        for (ModInstaller.InstalledMod version : group.versions) {
+            ModInstaller.ComponentMeta meta = ModInstaller.readMeta(
+                new File(version.dirPath).getParentFile(), version.displayName);
+            if (meta == null || meta.manifestUrl.isEmpty()
+                    || meta.kind != GenLauncherReposClient.KIND_MOD) {
+                continue;
+            }
+            installedVersionByMod.put(group.modName, meta.version);
+            try {
+                GenLauncherReposClient.RepoVersion current =
+                    cachedManifest(meta.manifestUrl);
+                if (current != null) {
+                    availableVersionByMod.put(group.modName, current.version);
+                    if (GenLauncherReposClient.isUpdate(current.version, meta.version)) {
+                        update = true;
+                    }
+                }
+            } catch (Exception ignored) {
+                // Quiet: a failed check just leaves no badge this session.
+            }
+        }
+        // Layers: each installed layer compares against its own manifest.
+        for (String layer : ModInstaller.listLayers(gameFolder, group.modName)) {
+            ModInstaller.ComponentMeta meta = ModInstaller.readMeta(
+                ModInstaller.layersRoot(gameFolder, group.modName), layer);
+            String key = group.modName + " " + layer;
+            if (meta == null || meta.manifestUrl.isEmpty()) {
+                layerUpdateByKey.put(key, false);
+                continue;
+            }
+            try {
+                GenLauncherReposClient.RepoVersion current =
+                    cachedManifest(meta.manifestUrl);
+                boolean layerUpdate = current != null
+                    && GenLauncherReposClient.isUpdate(current.version, meta.version);
+                layerUpdateByKey.put(key, layerUpdate);
+                update |= layerUpdate;
+            } catch (Exception ignored) {
+                layerUpdateByKey.put(key, false);
+            }
+        }
+        updateByMod.put(group.modName, update);
+    }
+
+    /** Manifest fetch with an in-memory cache (per panel life). */
+    private GenLauncherReposClient.RepoVersion cachedManifest(String url) throws IOException {
+        GenLauncherReposClient.RepoVersion cached = manifestCache.get(url);
+        if (cached != null) {
+            return cached;
+        }
+        GenLauncherReposClient.RepoVersion fetched =
+            GenLauncherReposClient.fetchVersion(url);
+        if (fetched.isDownloadable()) {
+            GenLauncherReposClient.fillS3Objects(fetched);
+        }
+        manifestCache.put(url, fetched);
+        return fetched;
+    }
+
+    /** Loads the repository index in the background if needed. */
+    private void ensureIndexLoaded() {
+        if (repoMods != null || repoLoading) {
+            return;
+        }
+        try {
+            repoMods = GenLauncherReposClient.fetchRepoMods();
+            repoError = null;
+        } catch (Exception e) {
+            repoMods = null;
+            repoError = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
+        }
+    }
+
     private void checkUpdatesManually() {
         if (gameFolder == null) {
             return;
         }
-        updateByGroup.clear(); // force a fresh check even for cached verdicts
-        List<ModInstaller.ModGroup> groups = ModInstaller.listGroups(gameFolder, launchPath);
+        updateByMod.clear(); // force a fresh check even for cached verdicts
+        layerUpdateByKey.clear();
+        modsWithUpdates.clear();
+        installedVersionByMod.clear();
+        availableVersionByMod.clear();
+        List<ModInstaller.ModGroup> groups = ModInstaller.listGroups(gameFolder, selectionPath());
         showStatus(host.activity().getString(R.string.mods_checking_updates));
-        checkUpdates(groups, () -> {
+        checkRepoUpdates(groups, () -> {
             hideStatus();
             int found = 0;
-            for (Boolean b : updateByGroup.values()) {
+            for (Boolean b : updateByMod.values()) {
                 if (Boolean.TRUE.equals(b)) {
                     found++;
                 }
@@ -615,20 +874,78 @@ final class ModsPanel extends LinearLayout {
 
     // ------------------------------------------------- selection + launching
 
-    private void selectForLaunch(String dirPath) {
+    /**
+     * Activates a base version: merges enabled layers over it (or selects
+     * it directly when none are enabled) and records the resolved dir plus
+     * the pristine base dir (second line, new in 1.6 — old one-line files
+     * still read fine) in mod_launch.cfg.
+     */
+    private void selectForLaunch(String modName, String baseDirPath, Runnable after) {
         Activity activity = host.activity();
-        try (FileWriter w = new FileWriter(new File(activity.getFilesDir(), "mod_launch.cfg"), false)) {
-            w.write(dirPath);
-            w.write("\n");
-            launchPath = dirPath;
-            rebuild();
-        } catch (Exception e) {
-            toast(activity.getString(R.string.mods_err_write_cfg, String.valueOf(e)));
+        showStatus(activity.getString(R.string.mods_launch_resolving));
+        new Thread(() -> {
+            String resolved = baseDirPath;
+            String error = null;
+            try {
+                resolved = ModInstaller.resolveLaunchDir(gameFolder, modName, baseDirPath);
+            } catch (Exception e) {
+                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
+            }
+            final String finalResolved = resolved;
+            final String finalError = error;
+            activity.runOnUiThread(() -> {
+                hideStatus();
+                if (isFinishingSafe()) {
+                    return;
+                }
+                if (finalError != null) {
+                    toast(activity.getString(R.string.mods_err_write_cfg, finalError));
+                    return;
+                }
+                try (FileWriter w = new FileWriter(
+                        new File(activity.getFilesDir(), "mod_launch.cfg"), false)) {
+                    w.write(finalResolved);
+                    w.write("\n");
+                    w.write(baseDirPath);
+                    w.write("\n");
+                    launchPath = finalResolved;
+                    launchBase = baseDirPath;
+                    rebuild();
+                    if (after != null) {
+                        after.run();
+                    }
+                } catch (Exception e) {
+                    toast(activity.getString(R.string.mods_err_write_cfg, String.valueOf(e)));
+                }
+            });
+        }, "gx-mod-activate").start();
+    }
+
+    /** Play path: activate (merge layers) first, then run the launch gate. */
+    private void selectAndLaunch(ModInstaller.ModGroup group) {
+        ModInstaller.InstalledMod base = null;
+        for (ModInstaller.InstalledMod v : group.versions) {
+            if (v.selected) {
+                base = v;
+                break;
+            }
         }
+        if (base == null) {
+            base = group.versions.get(0);
+        }
+        final String baseDir = base.dirPath;
+        // Already pointing at this family's resolved dir: just launch.
+        if (launchPath != null && base.selected
+                && launchPath.startsWith(new File(baseDir).getParent())) {
+            onLaunchGame();
+            return;
+        }
+        selectForLaunch(group.modName, baseDir, this::onLaunchGame);
     }
 
     private void clearLaunchCfg() {
         new File(host.activity().getFilesDir(), "mod_launch.cfg").delete();
+        launchBase = null;
     }
 
     static String readLaunchCfg(Activity activity) {
@@ -639,6 +956,30 @@ final class ModsPanel extends LinearLayout {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Pristine base dir behind the resolved launch (line 2, written since
+     * 1.6). Falls back to line 1 for older files, so selection state keeps
+     * working across the upgrade.
+     */
+    static String readLaunchBase(Activity activity) {
+        try (java.io.BufferedReader r = new java.io.BufferedReader(
+                 new java.io.FileReader(new File(activity.getFilesDir(), "mod_launch.cfg")))) {
+            r.readLine();
+            String base = r.readLine();
+            if (base != null && !base.trim().isEmpty()) {
+                return base.trim();
+            }
+        } catch (Exception ignored) {
+            // fall through to line 1
+        }
+        return readLaunchCfg(activity);
+    }
+
+    /** Version dir used for selection flags (base, not the merged tree). */
+    private String selectionPath() {
+        return launchBase != null ? launchBase : launchPath;
     }
 
     /**
@@ -668,6 +1009,699 @@ final class ModsPanel extends LinearLayout {
                 .show();
     }
 
+    // ---------------------------------------------------------- repository
+
+    private void buildRepo() {
+        Activity activity = host.activity();
+        LinearLayout card = UiKit.card(listHost);
+        UiKit.sectionHeader(card, R.drawable.ic_gen_globe,
+            activity.getString(R.string.mods_card_browse), false);
+        UiKit.supporting(card, activity.getString(R.string.mods_browse_hint));
+
+        LinearLayout searchRow = new LinearLayout(activity);
+        searchRow.setOrientation(LinearLayout.HORIZONTAL);
+        searchRow.setGravity(Gravity.CENTER_VERTICAL);
+        final EditText query = new EditText(activity);
+        query.setHint(R.string.mods_search_hint);
+        query.setInputType(InputType.TYPE_CLASS_TEXT);
+        query.setSingleLine(true);
+        query.setTextSize(15f);
+        if (!repoQuery.isEmpty()) {
+            query.setText(repoQuery);
+        }
+        query.setOnEditorActionListener((v, actionId, event) -> {
+            repoQuery = query.getText().toString().trim();
+            rebuild();
+            return true;
+        });
+        searchRow.addView(query, new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        android.widget.Button searchBtn = new android.widget.Button(activity);
+        searchBtn.setText(R.string.mods_search_button);
+        searchBtn.setOnClickListener(v -> {
+            repoQuery = query.getText().toString().trim();
+            rebuild();
+        });
+        searchRow.addView(searchBtn, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        card.addView(searchRow, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        resultsHost = new LinearLayout(activity);
+        resultsHost.setOrientation(LinearLayout.VERTICAL);
+        listHost.addView(resultsHost, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        if (repoMods == null && !repoLoading) {
+            UiKit.supporting(card, activity.getString(R.string.mods_loading));
+            repoLoading = true;
+            new Thread(() -> {
+                ensureIndexLoaded();
+                activity.runOnUiThread(() -> {
+                    repoLoading = false;
+                    if (!isFinishingSafe()) {
+                        rebuild();
+                    }
+                });
+            }, "gx-repos-index").start();
+            return;
+        }
+        if (repoMods == null) {
+            UiKit.supporting(card, activity.getString(R.string.mods_loading));
+            return;
+        }
+        if (repoError != null) {
+            renderError(activity.getString(R.string.mods_err_fetch, repoError), true);
+            return;
+        }
+        renderRepoList();
+    }
+
+    /** The curated list: logo, name, layer counts; tap = detail page. */
+    private void renderRepoList() {
+        Activity activity = host.activity();
+        if (resultsHost == null) {
+            return;
+        }
+        resultsHost.removeAllViews();
+        String q = repoQuery.toLowerCase(Locale.US);
+        List<GenLauncherReposClient.RepoMod> shown = new ArrayList<>();
+        for (GenLauncherReposClient.RepoMod mod : repoMods) {
+            if (q.isEmpty() || mod.name.toLowerCase(Locale.US).contains(q)) {
+                shown.add(mod);
+            }
+        }
+        LinearLayout card = UiKit.card(resultsHost);
+        UiKit.sectionHeader(card, R.drawable.ic_gen_chip,
+            activity.getString(R.string.mods_repo_title, shown.size()), false);
+        UiKit.supporting(card, activity.getString(R.string.mods_repo_hint));
+        if (shown.isEmpty()) {
+            UiKit.supporting(card, activity.getString(R.string.mods_repo_no_match));
+            return;
+        }
+        for (GenLauncherReposClient.RepoMod mod : shown) {
+            card.addView(buildRepoRow(mod));
+        }
+    }
+
+    private View buildRepoRow(GenLauncherReposClient.RepoMod mod) {
+        Activity activity = host.activity();
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setOnClickListener(v -> openRepoDetail(mod.name, SCREEN_REPO));
+        int pad = UiKit.dp(activity, 10f);
+        row.setPadding(pad, pad, pad, pad);
+
+        final ImageView thumb = new ImageView(activity);
+        thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        thumb.setContentDescription(mod.name);
+        int size = UiKit.dp(activity, 52f);
+        android.graphics.drawable.GradientDrawable thumbBg =
+            new android.graphics.drawable.GradientDrawable();
+        thumbBg.setCornerRadius(UiKit.dp(activity, 10f));
+        thumbBg.setColor(UiKit.color(activity, R.color.gen_surface_container_highest));
+        thumb.setBackground(thumbBg);
+        thumb.setImageResource(R.drawable.ic_gen_chip);
+        thumb.setImageTintList(android.content.res.ColorStateList.valueOf(
+            UiKit.color(activity, R.color.gen_on_surface_faint)));
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(size, size);
+        tlp.setMarginEnd(UiKit.dp(activity, 12f));
+        row.addView(thumb, tlp);
+        // The list carries the base logo once its manifest resolved
+        // (progressively after the index load); until then the placeholder.
+        GenLauncherReposClient.RepoVersion cached = manifestCache.get(mod.manifestUrl);
+        String logoUrl = cached != null ? cached.imageUrl
+            : ModInstaller.readLogo(gameFolder, mod.name);
+        if (logoUrl != null) {
+            ThumbCache.load(logoUrl, bitmap -> thumb.post(() -> {
+                if (bitmap != null && !bitmap.isRecycled()) {
+                    thumb.setImageBitmap(bitmap);
+                    thumb.setImageTintList(null);
+                }
+            }));
+        }
+
+        LinearLayout textCol = new LinearLayout(activity);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        row.addView(textCol, new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView title = new TextView(activity);
+        title.setText(mod.name);
+        title.setTextSize(15f);
+        title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        title.setTextColor(UiKit.color(activity, R.color.gen_on_surface));
+        textCol.addView(title);
+
+        StringBuilder meta = new StringBuilder();
+        if (cached != null && cached.version != null) {
+            meta.append(cached.version);
+        }
+        if (mod.layerCount() > 0) {
+            if (meta.length() > 0) {
+                meta.append(" \u00b7 ");
+            }
+            meta.append(activity.getString(R.string.mods_layers_count, mod.layerCount()));
+        }
+        Boolean update = updateByMod.get(mod.name);
+        if (meta.length() == 0 && !Boolean.TRUE.equals(update)) {
+            meta.append(activity.getString(R.string.mods_tap_for_details));
+        }
+        TextView metaView = new TextView(activity);
+        metaView.setText(meta.toString());
+        metaView.setTextSize(12f);
+        metaView.setSingleLine(true);
+        metaView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        metaView.setTextColor(UiKit.color(activity,
+            Boolean.TRUE.equals(update) ? R.color.gen_tertiary
+                                        : R.color.gen_on_surface_variant));
+        textCol.addView(metaView);
+
+        if (Boolean.TRUE.equals(update)) {
+            TextView badge = new TextView(activity);
+            badge.setText(R.string.mods_update_badge);
+            badge.setTextSize(12f);
+            badge.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            badge.setSingleLine(true);
+            badge.setTextColor(UiKit.color(activity, R.color.gen_tertiary));
+            badge.setPadding(UiKit.dp(activity, 8f), UiKit.dp(activity, 3f),
+                UiKit.dp(activity, 8f), UiKit.dp(activity, 3f));
+            GradientBg.applyTinted(badge, R.color.gen_tertiary_container);
+            row.addView(badge);
+        }
+        return row;
+    }
+
+    // ------------------------------------------------------- detail screen
+
+    /** Opens a mod's page (base + patches + addons) from list/notice/badge. */
+    private void openRepoDetail(String modName, int returnScreen) {
+        detailName = modName;
+        detailReturn = returnScreen;
+        detailMod = null;
+        detailBase = null;
+        detailLayers.clear();
+        detailGroup = null;
+        detailLoading = true;
+        if (screen != SCREEN_DETAIL) {
+            screen = SCREEN_DETAIL;
+        }
+        rebuild();
+        new Thread(() -> {
+            GenLauncherReposClient.RepoMod mod = null;
+            GenLauncherReposClient.RepoVersion base = null;
+            List<LayerRow> layers = new ArrayList<>();
+            String error = null;
+            try {
+                ensureIndexLoaded();
+                if (repoMods != null) {
+                    for (GenLauncherReposClient.RepoMod m : repoMods) {
+                        if (m.name.equals(detailName)) {
+                            mod = m;
+                            break;
+                        }
+                    }
+                }
+                if (mod == null) {
+                    // Installed but not in the index (storage import): the
+                    // page still shows installed components below.
+                    mod = new GenLauncherReposClient.RepoMod(detailName);
+                }
+                if (mod.manifestUrl != null) {
+                    base = cachedManifest(mod.manifestUrl);
+                    ModInstaller.writeLogo(gameFolder, mod.name, base.imageUrl);
+                    for (String url : mod.patchUrls) {
+                        layers.add(resolveLayer(url, GenLauncherReposClient.KIND_PATCH));
+                    }
+                    for (String url : mod.addonUrls) {
+                        layers.add(resolveLayer(url, GenLauncherReposClient.KIND_ADDON));
+                    }
+                }
+            } catch (Exception e) {
+                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
+            }
+            if (mod == null) {
+                // Total failure still renders a page (installed parts +
+                // error), never a stuck spinner.
+                mod = new GenLauncherReposClient.RepoMod(detailName);
+            }
+            final GenLauncherReposClient.RepoMod finalMod = mod;
+            final GenLauncherReposClient.RepoVersion finalBase = base;
+            final List<LayerRow> finalLayers = layers;
+            final String finalError = error;
+            Activity activity = host.activity();
+            activity.runOnUiThread(() -> {
+                if (isFinishingSafe() || !detailName.equals(finalMod != null
+                        ? finalMod.name : detailName)) {
+                    return;
+                }
+                detailMod = finalMod;
+                detailBase = finalBase;
+                detailLayers.clear();
+                detailLayers.addAll(finalLayers);
+                detailGroup = findGroup(detailName);
+                stampLayerStates();
+                detailLoading = false;
+                if (finalError != null && finalBase == null && finalLayers.isEmpty()) {
+                    repoError = finalError;
+                }
+                rebuild();
+            });
+        }, "gx-repos-detail").start();
+    }
+
+    private LayerRow resolveLayer(String url, int kind) {
+        LayerRow row = new LayerRow();
+        row.manifestUrl = url;
+        row.kind = kind;
+        row.installedVersion = "";
+        try {
+            row.resolved = cachedManifest(url);
+            row.kind = row.resolved.kind;
+        } catch (Exception e) {
+            row.error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
+        }
+        return row;
+    }
+
+    /** Fills installed/enabled state for the detail's layer rows. */
+    private void stampLayerStates() {
+        if (detailName == null || gameFolder == null) {
+            return;
+        }
+        List<String> enabled =
+            ModInstaller.readEnabledLayers(gameFolder, detailName);
+        for (LayerRow row : detailLayers) {
+            String layerDir = layerDirName(row);
+            ModInstaller.ComponentMeta meta = ModInstaller.readMeta(
+                ModInstaller.layersRoot(gameFolder, detailName), layerDir);
+            row.installedVersion = meta != null ? meta.version : "";
+            row.enabled = enabled.contains(layerDir);
+        }
+    }
+
+    /** Installed dir name for a layer: its resolved name, else URL hash. */
+    private String layerDirName(LayerRow row) {
+        if (row.resolved != null && row.resolved.name != null
+                && !row.resolved.name.isEmpty()) {
+            return row.resolved.name;
+        }
+        return "layer-" + Math.abs(row.manifestUrl.hashCode());
+    }
+
+    private ModInstaller.ModGroup findGroup(String modName) {
+        if (gameFolder == null) {
+            return null;
+        }
+        for (ModInstaller.ModGroup g
+                : ModInstaller.listGroups(gameFolder, selectionPath())) {
+            if (g.modName.equals(modName)) {
+                return g;
+            }
+        }
+        return null;
+    }
+
+    private void buildDetail() {
+        Activity activity = host.activity();
+        LinearLayout card = UiKit.card(listHost);
+        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_chevron,
+            activity.getString(R.string.mods_back_to_repo), () -> {
+                screen = detailReturn;
+                rebuild();
+            });
+
+        if (detailLoading || detailMod == null) {
+            UiKit.sectionHeader(card, R.drawable.ic_gen_chip,
+                detailName != null ? detailName : "", false);
+            UiKit.supporting(card, activity.getString(R.string.mods_loading));
+            return;
+        }
+
+        // Hero art + title + version.
+        if (detailBase != null && detailBase.imageUrl != null
+                && !detailBase.imageUrl.isEmpty()) {
+            LinearLayout hero = UiKit.card(listHost);
+            final ImageView image = new ImageView(activity);
+            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            image.setContentDescription(detailMod.name);
+            hero.addView(image, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, UiKit.dp(activity, 170f)));
+            ThumbCache.load(detailBase.imageUrl, bitmap -> activity.runOnUiThread(() -> {
+                if (bitmap != null && !isFinishingSafe()) {
+                    image.setImageBitmap(bitmap);
+                }
+            }));
+        }
+
+        LinearLayout body = UiKit.card(listHost);
+        UiKit.sectionHeader(body, R.drawable.ic_gen_chip, detailMod.name, false);
+        if (detailBase != null) {
+            String installed = installedVersionByMod.get(detailName);
+            if (installed == null && detailGroup != null) {
+                installed = installedBaseVersion(detailGroup);
+            }
+            StringBuilder meta = new StringBuilder(detailBase.version);
+            if (installed != null && !installed.isEmpty()) {
+                meta.append(" \u00b7 ").append(activity.getString(
+                    R.string.mods_version_installed, installed));
+            }
+            UiKit.supporting(body, meta.toString());
+            boolean baseUpdate = detailGroup != null
+                && Boolean.TRUE.equals(updateByMod.get(detailName));
+            if (detailGroup == null) {
+                UiKit.button(body, UiKit.BTN_PRIMARY, R.drawable.ic_gen_download,
+                    activity.getString(R.string.mods_detail_install),
+                    () -> startComponentInstall(detailMod.name, detailBase, false));
+            } else if (baseUpdate) {
+                UiKit.button(body, UiKit.BTN_PRIMARY, R.drawable.ic_gen_download,
+                    activity.getString(R.string.mods_action_update),
+                    () -> startComponentInstall(detailMod.name, detailBase, false));
+                UiKit.button(body, UiKit.BTN_TONAL, R.drawable.ic_gen_play,
+                    activity.getString(R.string.mods_action_play_short),
+                    () -> selectAndLaunch(detailGroup));
+            } else {
+                UiKit.button(body, UiKit.BTN_TONAL, R.drawable.ic_gen_play,
+                    activity.getString(R.string.mods_action_play_short),
+                    () -> selectAndLaunch(detailGroup));
+            }
+        } else {
+            UiKit.supporting(body, activity.getString(R.string.mods_not_in_repo));
+        }
+
+        // Patches & addons as layers over the base.
+        LinearLayout layers = UiKit.card(listHost);
+        int enabledCount = gameFolder != null
+            ? ModInstaller.readEnabledLayers(gameFolder, detailName).size() : 0;
+        UiKit.sectionHeader(layers, R.drawable.ic_gen_chip,
+            activity.getString(R.string.mods_layers_title, enabledCount,
+                detailLayers.size()), false);
+        UiKit.supporting(layers, activity.getString(R.string.mods_layers_hint));
+        if (detailLayers.isEmpty()) {
+            UiKit.supporting(layers, activity.getString(R.string.mods_no_layers));
+        }
+        for (LayerRow row : detailLayers) {
+            buildLayerRow(layers, row);
+        }
+    }
+
+    private void buildLayerRow(LinearLayout parent, LayerRow row) {
+        Activity activity = host.activity();
+        String title = row.resolved != null ? row.resolved.name : row.manifestUrl;
+        StringBuilder supporting = new StringBuilder();
+        String kindLabel = activity.getString(row.kind == GenLauncherReposClient.KIND_PATCH
+            ? R.string.mods_kind_patch : R.string.mods_kind_addon);
+        if (row.resolved != null) {
+            supporting.append(row.resolved.version).append(" \u00b7 ").append(kindLabel);
+        } else {
+            supporting.append(kindLabel);
+        }
+        if (!row.installedVersion.isEmpty()) {
+            supporting.append(" \u00b7 ").append(activity.getString(
+                R.string.mods_version_installed, row.installedVersion));
+        }
+        String key = detailName + " " + layerDirName(row);
+        if (Boolean.TRUE.equals(layerUpdateByKey.get(key))) {
+            supporting.append(" \u00b7 ")
+                .append(activity.getString(R.string.mods_update_badge));
+        }
+        if (row.error != null && row.resolved == null) {
+            supporting.append(" \u00b7 ").append(row.error);
+        }
+        UiKit.Row uiRow = UiKit.listRow(parent, R.drawable.ic_gen_download,
+            title, supporting.toString(), null);
+
+        LinearLayout actions = new LinearLayout(activity);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        parent.addView(actions, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        if (row.installedVersion.isEmpty()) {
+            if (row.resolved != null && row.resolved.isDownloadable()) {
+                addCardAction(actions, false, R.drawable.ic_gen_download,
+                    activity.getString(R.string.mods_detail_install),
+                    () -> startComponentInstall(detailName, row.resolved, true));
+            }
+        } else {
+            // Two rows of two at most (see the installed card): three
+            // squeezed buttons ellipsize Arabic labels on-device.
+            LinearLayout rowB = new LinearLayout(activity);
+            rowB.setOrientation(LinearLayout.HORIZONTAL);
+            parent.addView(rowB, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            if (row.resolved != null && GenLauncherReposClient.isUpdate(
+                    row.resolved.version, row.installedVersion)) {
+                addCardAction(actions, true, R.drawable.ic_gen_download,
+                    activity.getString(R.string.mods_action_update),
+                    () -> startComponentInstall(detailName, row.resolved, true));
+            }
+            boolean isEnabled = row.enabled;
+            addCardAction(actions, false, isEnabled ? R.drawable.ic_gen_check
+                    : R.drawable.ic_gen_chip,
+                activity.getString(isEnabled ? R.string.mods_layer_enabled
+                                             : R.string.mods_layer_enable),
+                () -> toggleLayer(row));
+            addCardAction(rowB, false, R.drawable.ic_gen_trash,
+                activity.getString(R.string.mods_action_delete),
+                () -> confirmDeleteLayer(row));
+        }
+        // Keep the row's chevron from implying navigation: rows act through
+        // the buttons beneath them.
+        uiRow.root.setClickable(false);
+        uiRow.root.setFocusable(false);
+    }
+
+    private void toggleLayer(LayerRow row) {
+        if (gameFolder == null || detailName == null) {
+            return;
+        }
+        List<String> enabled = ModInstaller.readEnabledLayers(gameFolder, detailName);
+        String dir = layerDirName(row);
+        if (!enabled.remove(dir)) {
+            enabled.add(dir);
+        }
+        ModInstaller.writeEnabledLayers(gameFolder, detailName, enabled);
+        if (enabled.isEmpty()) {
+            ModInstaller.dropActiveDir(gameFolder, detailName);
+        }
+        // Re-resolve the live launch if it points into this family so the
+        // toggle takes effect without reselecting the mod.
+        refreshFamilyActivation(detailName);
+        stampLayerStates();
+        detailGroup = findGroup(detailName);
+        rebuild();
+    }
+
+    private void confirmDeleteLayer(LayerRow row) {
+        Activity activity = host.activity();
+        String dir = layerDirName(row);
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle(activity.getString(R.string.mods_delete_title,
+                    row.resolved != null ? row.resolved.name : dir))
+                .setMessage(activity.getString(R.string.mods_delete_body, dir))
+                .setPositiveButton(R.string.mods_delete_confirm, (d, w) -> {
+                    ModInstaller.deleteRecursively(
+                        new File(ModInstaller.layersRoot(gameFolder, detailName), dir));
+                    new File(ModInstaller.layersRoot(gameFolder, detailName),
+                        dir + ModInstaller.META_SUFFIX).delete();
+                    List<String> enabled =
+                        ModInstaller.readEnabledLayers(gameFolder, detailName);
+                    if (enabled.remove(dir)) {
+                        ModInstaller.writeEnabledLayers(gameFolder, detailName, enabled);
+                    }
+                    ModInstaller.dropActiveDir(gameFolder, detailName);
+                    refreshFamilyActivation(detailName);
+                    stampLayerStates();
+                    detailGroup = findGroup(detailName);
+                    rebuild();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** Re-merges +active when the live launch points into this family. */
+    private void refreshFamilyActivation(String modName) {
+        if (launchPath == null || gameFolder == null) {
+            return;
+        }
+        String familyRoot = new File(gameFolder,
+            "Mods" + File.separator + modName).getAbsolutePath();
+        if (!launchPath.startsWith(familyRoot)) {
+            return;
+        }
+        String base = readLaunchBase(host.activity());
+        if (base == null || !new File(base).isDirectory()) {
+            return;
+        }
+        try {
+            launchPath = ModInstaller.resolveLaunchDir(gameFolder, modName, base);
+            try (FileWriter w = new FileWriter(
+                    new File(host.activity().getFilesDir(), "mod_launch.cfg"), false)) {
+                w.write(launchPath);
+                w.write("\n");
+                w.write(base);
+                w.write("\n");
+            }
+        } catch (Exception ignored) {
+            // Next activation rebuilds; the current pointer stays valid.
+        }
+    }
+
+    /** Installed base version from sidecars (MOD kind), or "". */
+    private String installedBaseVersion(ModInstaller.ModGroup group) {
+        for (ModInstaller.InstalledMod v : group.versions) {
+            ModInstaller.ComponentMeta meta = ModInstaller.readMeta(
+                new File(v.dirPath).getParentFile(), v.displayName);
+            if (meta != null && meta.kind == GenLauncherReposClient.KIND_MOD
+                    && !meta.version.isEmpty()) {
+                return meta.version;
+            }
+        }
+        return "";
+    }
+
+    // ------------------------------------------------------ install pipeline
+
+    /**
+     * Installs one repository component: base versions beside any existing
+     * ones (GenLauncher's model), layers into +layers/. S3 folder mods
+     * stream file-by-file with no staging copy; archives go through the
+     * shared download+extract pipeline.
+     */
+    private void startComponentInstall(String modName,
+                                       GenLauncherReposClient.RepoVersion version,
+                                       boolean isLayer) {
+        Activity activity = host.activity();
+        if (gameFolder == null) {
+            toast(activity.getString(R.string.mods_no_game_folder));
+            return;
+        }
+        installingComponent = version;
+        installingModName = modName;
+        installingIsLayer = isLayer;
+        installBase = fileBaseName(version.version);
+        long total = 0;
+        for (GenLauncherReposClient.S3Object o : version.s3Objects) {
+            total += o.size;
+        }
+        final long totalBytes = total;
+        if (ModInstaller.freeBytes(gameFolder) < Math.max(512L * 1024 * 1024, totalBytes)) {
+            new android.app.AlertDialog.Builder(activity)
+                    .setTitle(activity.getString(R.string.mods_err_title))
+                    .setMessage(activity.getString(R.string.mods_err_low_storage,
+                        humanBytes(ModInstaller.freeBytes(gameFolder))))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
+        }
+        showInstallCard(modName + " " + version.version);
+        final ModInstaller.Listener listener = makeInstallListener();
+        new Thread(() -> {
+            String error = null;
+            try {
+                if (!version.s3Objects.isEmpty()) {
+                    installS3Component(modName, version, isLayer, totalBytes, listener);
+                } else {
+                    installArchiveComponent(modName, version, isLayer, listener);
+                }
+            } catch (Exception e) {
+                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
+            }
+            final String finalError = error;
+            activity.runOnUiThread(() -> {
+                if (statusBar != null) {
+                    statusBar.setVisibility(View.GONE);
+                }
+                if (isFinishingSafe()) {
+                    return;
+                }
+                if (finalError != null) {
+                    toast(activity.getString(R.string.mods_err_install, finalError));
+                    rebuild();
+                    return;
+                }
+                updateByMod.remove(modName); // re-check this family next time
+                toast(activity.getString(R.string.mods_install_done,
+                    modName + " " + version.version));
+                if (screen == SCREEN_DETAIL) {
+                    openRepoDetail(modName, detailReturn);
+                } else {
+                    screen = SCREEN_INSTALLED;
+                    rebuild();
+                }
+            });
+        }, "gx-repos-install").start();
+    }
+
+    private void installS3Component(String modName,
+                                    GenLauncherReposClient.RepoVersion version,
+                                    boolean isLayer, long totalBytes,
+                                    ModInstaller.Listener listener) throws IOException {
+        File target;
+        if (isLayer) {
+            target = ModInstaller.prepareLayerDir(gameFolder, modName,
+                safeLayerName(version));
+        } else {
+            target = ModInstaller.prepareVersionDir(gameFolder, modName, version.version);
+        }
+        long[] done = {0};
+        int count = 0;
+        for (GenLauncherReposClient.S3Object o : version.s3Objects) {
+            String fileName = o.key.substring(o.key.lastIndexOf('/') + 1);
+            if (fileName.isEmpty()) {
+                continue;
+            }
+            listener.onPhase(fileName);
+            listener.onProgress(done[0], totalBytes);
+            ModInstaller.streamToFolder(
+                GenLauncherReposClient.s3ObjectUrl(version, o),
+                new File(target, fileName),
+                o.size,
+                (delta) -> listener.onProgress(done[0] + delta, totalBytes));
+            done[0] += o.size;
+            count++;
+        }
+        if (count == 0) {
+            throw new IOException("no files in this mod's storage");
+        }
+        ModInstaller.writeMeta(target, version.manifestUrl, version.version, version.kind);
+        if (!isLayer) {
+            ModInstaller.writeLogo(gameFolder, modName, version.imageUrl);
+        }
+    }
+
+    private void installArchiveComponent(String modName,
+                                         GenLauncherReposClient.RepoVersion version,
+                                         boolean isLayer,
+                                         ModInstaller.Listener listener) throws Exception {
+        if (isLayer) {
+            File target = ModInstaller.prepareLayerDir(gameFolder, modName,
+                safeLayerName(version));
+            ModInstaller.downloadAndExtractTo(version.simpleDownloadLink, target,
+                fileBaseName(version.name), listener);
+            ModInstaller.writeMeta(target, version.manifestUrl, version.version,
+                version.kind);
+        } else {
+            File installed = ModInstaller.downloadAndInstall(version.simpleDownloadLink,
+                gameFolder, modName, fileBaseName(version.version),
+                version.manifestUrl, version.version, version.kind, listener);
+            ModInstaller.writeLogo(gameFolder, modName, version.imageUrl);
+            if (installed != null) {
+                ModInstaller.flattenSingleVersion(installed.getParentFile());
+            }
+        }
+    }
+
+    private static String safeLayerName(GenLauncherReposClient.RepoVersion version) {
+        String name = version.name != null ? version.name : "layer";
+        String cleaned = name.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+        return cleaned.isEmpty() ? "layer" : cleaned;
+    }
+
     // ------------------------------------------------- install from storage
 
     /**
@@ -688,9 +1722,9 @@ final class ModsPanel extends LinearLayout {
     }
 
     /**
-     * GenLauncher-style extracted-folder import: the user browses to the
-     * folder with our own picker (real filesystem paths, no SAF tree dance)
-     * and the installer copies the .big set (+ companions) into Mods/.
+     * Extracted-folder import: the user browses to the folder with our own
+     * picker (real filesystem paths, no SAF tree dance) and the installer
+     * copies the .big set (+ companions) into Mods/.
      */
     private void onImportExtractedFolder() {
         Activity activity = host.activity();
@@ -726,9 +1760,6 @@ final class ModsPanel extends LinearLayout {
             try {
                 File installed = ModInstaller.installFromExtractedFolder(
                     dir, gameFolder, dir.getName(), listener);
-                // GenLauncher style: a folder-picked mod is its own single
-                // version — collapse the duplicated <Mod>/<Mod>/ wrapper so
-                // the Installed list shows one clean row.
                 if (installed != null) {
                     ModInstaller.flattenSingleVersion(installed.getParentFile());
                 }
@@ -802,8 +1833,6 @@ final class ModsPanel extends LinearLayout {
                 }
                 File installed = ModInstaller.installFromLocalFile(
                     archive, gameFolder, modName, listener);
-                // GenLauncher style: single-version installs (archive or
-                // ModDB download) collapse the redundant <Mod>/<Mod>/ leaf.
                 if (installed != null) {
                     ModInstaller.flattenSingleVersion(installed.getParentFile());
                 }
@@ -853,787 +1882,13 @@ final class ModsPanel extends LinearLayout {
         return name;
     }
 
-    // ---------------------------------------------------------- browse view
-
-    private void buildBrowseSearch() {
-        Activity activity = host.activity();
-        LinearLayout card = UiKit.card(listHost);
-        UiKit.sectionHeader(card, R.drawable.ic_gen_globe,
-            activity.getString(R.string.mods_card_browse), false);
-        UiKit.supporting(card, activity.getString(R.string.mods_browse_hint));
-
-        LinearLayout searchRow = new LinearLayout(activity);
-        searchRow.setOrientation(LinearLayout.HORIZONTAL);
-        searchRow.setGravity(Gravity.CENTER_VERTICAL);
-        final EditText query = new EditText(activity);
-        query.setHint(R.string.mods_search_hint);
-        query.setInputType(InputType.TYPE_CLASS_TEXT);
-        query.setSingleLine(true);
-        query.setTextSize(15f);
-        if (lastQuery != null) {
-            query.setText(lastQuery);
-        }
-        query.setOnEditorActionListener((v, actionId, event) -> {
-            runBrowse(query.getText().toString().trim());
-            return true;
-        });
-        searchRow.addView(query, new LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        android.widget.Button searchBtn = new android.widget.Button(activity);
-        searchBtn.setText(R.string.mods_search_button);
-        searchBtn.setOnClickListener(v -> runBrowse(query.getText().toString().trim()));
-        searchRow.addView(searchBtn, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        card.addView(searchRow, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_refresh,
-            activity.getString(R.string.mods_show_all), () -> {
-                browseSource = SOURCE_MODDB;
-                runBrowse(null);
-            });
-        // GenLauncher repository: the curated manifest (Rise of the Reds,
-        // Contra, Shockwave…) with S3 individual-file downloads. One tap
-        // opens the list; a second tap on a mod installs its latest.
-        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_chip,
-            activity.getString(R.string.mods_browse_genlauncher), () -> {
-                browseSource = SOURCE_GENLAUNCHER;
-                runRepoBrowse();
-            });
-
-        // Sort row: persists across sessions, applies to whatever is shown.
-        UiKit.caption(card, activity.getString(R.string.mods_sort_label));
-        CharSequence[] sortLabels = {
-            activity.getString(R.string.mods_sort_popular),
-            activity.getString(R.string.mods_sort_rating),
-            activity.getString(R.string.mods_sort_recent),
-            activity.getString(R.string.mods_sort_name),
-        };
-        UiKit.segmented(card, sortLabels, sortMode, idx -> {
-            sortMode = idx;
-            saveBrowsePrefs();
-            if (!results.isEmpty()) {
-                sortResults();
-                renderSummaries();
-            }
-        });
-    }
-
-    // ------------------------------------------------- GenLauncher repository
-
-    /**
-     * Fetches the curated GenLauncher manifest on a worker thread and shows
-     * its mod list. The list itself is cheap (one GET); each mod's own YAML
-     * is only fetched when the user taps it, so opening the repository is
-     * instant and offline-friendly once cached.
-     */
-    private void runRepoBrowse() {
-        Activity activity = host.activity();
-        showStatus(activity.getString(R.string.mods_loading));
-        listHost.removeAllViews();
-        LinearLayout loading = UiKit.card(listHost);
-        UiKit.supporting(loading, activity.getString(R.string.mods_loading));
-        new Thread(() -> {
-            List<GenLauncherReposClient.RepoMod> fetched = null;
-            String error = null;
-            try {
-                if (repoMods == null) {
-                    repoMods = GenLauncherReposClient.fetchRepoMods();
-                }
-                fetched = repoMods;
-            } catch (Exception e) {
-                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
-            }
-            final List<GenLauncherReposClient.RepoMod> finalList = fetched;
-            final String finalError = error;
-            activity.runOnUiThread(() -> {
-                hideStatus();
-                if (!isFinishingSafe()) {
-                    if (finalError != null) {
-                        renderError(activity.getString(R.string.mods_err_fetch, finalError), true);
-                    } else if (finalList != null) {
-                        renderRepoMods();
-                    }
-                }
-            });
-        }, "gx-genlauncher-repos").start();
-    }
-
-    /** Renders the curated repository list: name rows, tap = install. */
-    private void renderRepoMods() {
-        Activity activity = host.activity();
-        listHost.removeAllViews();
-        LinearLayout card = UiKit.card(listHost);
-        UiKit.sectionHeader(card, R.drawable.ic_gen_chip,
-            activity.getString(R.string.mods_repo_title,
-                repoMods != null ? repoMods.size() : 0), false);
-        UiKit.supporting(card, activity.getString(R.string.mods_repo_hint));
-        if (repoMods == null || repoMods.isEmpty()) {
-            UiKit.supporting(card, activity.getString(R.string.mods_no_results));
-            return;
-        }
-        for (GenLauncherReposClient.RepoMod mod : repoMods) {
-            LinearLayout row = new LinearLayout(activity);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setClickable(true);
-            row.setFocusable(true);
-            int pad = UiKit.dp(activity, 10f);
-            row.setPadding(pad, pad, pad, pad);
-            GradientBg.apply(row);
-            TextView name = new TextView(activity);
-            name.setText(mod.name);
-            name.setTextSize(15f);
-            name.setTextColor(UiKit.color(activity, R.color.gen_on_surface));
-            row.addView(name, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-            TextView arrow = new TextView(activity);
-            arrow.setText("\u2193");
-            arrow.setTextColor(UiKit.color(activity, R.color.gen_primary));
-            row.addView(arrow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-            row.setOnClickListener(v -> installRepoMod(mod));
-            card.addView(row, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        }
-    }
-
-    /**
-     * Resolves one repository mod's manifest and starts the download. Both
-     * GenLauncher shapes are supported: a SimpleDownloadLink archive goes
-     * through the same download+extract pipeline as ModDB files; an S3
-     * folder streams its .big objects straight into the version folder with
-     * no staging copy (the desktop launcher's per-file model).
-     */
-    private void installRepoMod(GenLauncherReposClient.RepoMod mod) {
-        Activity activity = host.activity();
-        if (gameFolder == null) {
-            toast(activity.getString(R.string.mods_no_game_folder));
-            return;
-        }
-        showStatus(activity.getString(R.string.mods_repo_resolving, mod.name));
-        new Thread(() -> {
-            GenLauncherReposClient.RepoVersion version = null;
-            String error = null;
-            try {
-                version = GenLauncherReposClient.fetchVersion(mod);
-                if (version.isDownloadable()) {
-                    // Always try the S3 listing first (no-op when the mod
-                    // declares no S3 storage): mods like Contra ship BOTH a
-                    // SimpleDownloadLink archive and S3 individual files, and
-                    // the archive is frequently RAR5, which the built-in
-                    // extractor cannot open. S3 files are the reliable path.
-                    GenLauncherReposClient.fillS3Objects(version);
-                }
-            } catch (Exception e) {
-                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
-            }
-            final GenLauncherReposClient.RepoVersion finalVersion = version;
-            final String finalError = error;
-            activity.runOnUiThread(() -> {
-                hideStatus();
-                if (!isFinishingSafe()) {
-                    if (finalError != null) {
-                        renderError(activity.getString(R.string.mods_err_fetch, finalError), true);
-                    } else if (finalVersion == null || !finalVersion.isDownloadable()) {
-                        toast(activity.getString(R.string.mods_repo_unavailable, mod.name));
-                    } else {
-                        installingRepoVersion = finalVersion;
-                        installingRepoName = finalVersion.name != null
-                            ? finalVersion.name : mod.name;
-                        startRepoInstall();
-                    }
-                }
-            });
-        }, "gx-repos-resolve").start();
-    }
-
-    /** Installs the resolved repository version (archive or S3 folder). */
-    private void startRepoInstall() {
-        Activity activity = host.activity();
-        final GenLauncherReposClient.RepoVersion v = installingRepoVersion;
-        final String modName = installingRepoName;
-        final ModInstaller.Listener listener = makeInstallListener();
-        long total = 0;
-        for (GenLauncherReposClient.S3Object o : v.s3Objects) {
-            total += o.size;
-        }
-        final long totalBytes = total;
-        if (ModInstaller.freeBytes(gameFolder) < Math.max(512L * 1024 * 1024, totalBytes)) {
-            new android.app.AlertDialog.Builder(activity)
-                    .setTitle(activity.getString(R.string.mods_err_title))
-                    .setMessage(activity.getString(R.string.mods_err_low_storage,
-                        humanBytes(ModInstaller.freeBytes(gameFolder))))
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show();
-            return;
-        }
-        showInstallCard(modName + " " + v.version);
-        new Thread(() -> {
-            String error = null;
-            try {
-                // S3 individual files take priority (GenLauncher's model):
-                // no archive staging copy, resumable per object. The
-                // SimpleDownloadLink archive is the fallback for mods that
-                // do not ship an S3 folder.
-                if (!v.s3Objects.isEmpty()) {
-                    File fileDir = ModInstaller.prepareVersionDir(
-                        gameFolder, modName, v.version);
-                    int count = 0;
-                    long[] done = {0};
-                    for (GenLauncherReposClient.S3Object o : v.s3Objects) {
-                        String fileName = o.key.substring(o.key.lastIndexOf('/') + 1);
-                        if (fileName.isEmpty()) {
-                            continue;
-                        }
-                        listener.onPhase(fileName);
-                        listener.onProgress(done[0], totalBytes);
-                        ModInstaller.streamToFolder(
-                            GenLauncherReposClient.s3ObjectUrl(v, o),
-                            new File(fileDir, fileName),
-                            o.size,
-                            (delta) -> listener.onProgress(done[0] + delta, totalBytes));
-                        done[0] += o.size;
-                        count++;
-                    }
-                    if (count == 0) {
-                        throw new IOException("no files in this mod's storage");
-                    }
-                    ModInstaller.writeMeta(fileDir, null);
-                } else {
-                    File installed = ModInstaller.downloadAndInstall(
-                        v.simpleDownloadLink, gameFolder, modName,
-                        fileBaseName(modName), listener);
-                    if (installed != null) {
-                        ModInstaller.flattenSingleVersion(installed.getParentFile());
-                    }
-                }
-            } catch (Exception e) {
-                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
-            }
-            final String finalError = error;
-            activity.runOnUiThread(() -> {
-                if (statusBar != null) {
-                    statusBar.setVisibility(View.GONE);
-                }
-                if (!isFinishingSafe()) {
-                    if (finalError != null) {
-                        offerInstallRetry(finalError);
-                        return;
-                    }
-                    toast(activity.getString(R.string.mods_install_done, modName));
-                    screen = SCREEN_INSTALLED;
-                    saveBrowsePrefs();
-                    rebuild();
-                }
-            });
-        }, "gx-repos-install").start();
-    }
-
-    private void sortResults() {
-        Comparator<ModDbClient.ModSummary> cmp;
-        switch (sortMode) {
-            case SORT_NAME:
-                cmp = (a, b) -> a.name.compareToIgnoreCase(b.name);
-                break;
-            case SORT_RECENT:
-                // Site order (last updated) is the freshest-first order we
-                // have without parsing dates; keep list order.
-            case SORT_POPULAR:
-            default:
-                // ModDB list order is already popularity-ranked; keep it.
-                return;
-        }
-        results.sort(cmp);
-    }
-
-    /** Fetches (or re-fetches) page 1 for a query; null query = show all. */
-    private void runBrowse(String query) {
-        Activity activity = host.activity();
-        showStatus(activity.getString(R.string.mods_loading));
-        listHost.removeAllViews();
-        LinearLayout loading = UiKit.card(listHost);
-        UiKit.supporting(loading, activity.getString(R.string.mods_loading));
-        lastQuery = (query != null && !query.isEmpty()) ? query : null;
-        browsePage = 1;
-        new Thread(() -> {
-            List<ModDbClient.ModSummary> fetched = null;
-            String error = null;
-            try {
-                if (lastQuery != null) {
-                    fetched = ModDbClient.searchMods(lastQuery);
-                } else {
-                    boolean[] more = new boolean[1];
-                    fetched = ModDbClient.fetchModList(1, more);
-                    hasMorePages = more[0];
-                }
-            } catch (Exception e) {
-                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
-            }
-            final List<ModDbClient.ModSummary> finalResults = fetched;
-            final String finalError = error;
-            activity.runOnUiThread(() -> {
-                hideStatus();
-                if (!isFinishingSafe()) {
-                    if (finalError != null) {
-                        renderError(activity.getString(R.string.mods_err_fetch, finalError), true);
-                    } else {
-                        results = finalResults != null ? finalResults : new ArrayList<>();
-                        sortResults();
-                        renderSummaries();
-                    }
-                }
-            });
-        }, "gx-moddb-browse").start();
-    }
-
-    /** Loads the next page of the "show all" list and appends it. */
-    private void loadMore() {
-        Activity activity = host.activity();
-        final int nextPage = browsePage + 1;
-        showStatus(activity.getString(R.string.mods_loading));
-        new Thread(() -> {
-            List<ModDbClient.ModSummary> fetched = null;
-            String error = null;
-            try {
-                boolean[] more = new boolean[1];
-                fetched = ModDbClient.fetchModList(nextPage, more);
-                hasMorePages = more[0];
-            } catch (Exception e) {
-                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
-            }
-            final List<ModDbClient.ModSummary> finalResults = fetched;
-            final String finalError = error;
-            activity.runOnUiThread(() -> {
-                hideStatus();
-                if (!isFinishingSafe()) {
-                    if (finalError == null && finalResults != null) {
-                        browsePage = nextPage;
-                        results.addAll(finalResults);
-                        renderSummaries();
-                    } else if (finalError != null) {
-                        toast(activity.getString(R.string.mods_err_fetch, finalError));
-                    }
-                }
-            });
-        }, "gx-moddb-more").start();
-    }
-
-    private void showStatus(String text) {
-        if (statusBar != null) {
-            statusBar.setVisibility(View.VISIBLE);
-            statusBar.setText(text);
-        }
-    }
-
-    private void hideStatus() {
-        if (statusBar != null) {
-            statusBar.setVisibility(View.GONE);
-        }
-    }
-
-    private void renderError(String message, boolean offerRetry) {
-        Activity activity = host.activity();
-        listHost.removeAllViews();
-        LinearLayout card = UiKit.card(listHost);
-        UiKit.sectionHeader(card, R.drawable.ic_gen_info,
-            activity.getString(R.string.mods_err_title), false);
-        UiKit.supporting(card, message);
-        if (offerRetry) {
-            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_refresh,
-                activity.getString(R.string.mods_retry), () -> runBrowse(lastQuery));
-        }
-    }
-
-    /**
-     * Rich result cards: thumbnail (when the row carries one), rating and
-     * download count as supporting metadata, blurb beneath. Everything
-     * optional — a field the page didn't provide just doesn't render.
-     */
-    private void renderSummaries() {
-        Activity activity = host.activity();
-        listHost.removeAllViews();
-        LinearLayout card = UiKit.card(listHost);
-        UiKit.sectionHeader(card, R.drawable.ic_gen_globe,
-            activity.getString(R.string.mods_card_results, results.size()), false);
-        if (results.isEmpty()) {
-            UiKit.supporting(card, activity.getString(R.string.mods_no_results));
-            return;
-        }
-        for (ModDbClient.ModSummary mod : results) {
-            card.addView(buildModCard(mod));
-        }
-        if (lastQuery == null && hasMorePages) {
-            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_download,
-                activity.getString(R.string.mods_page_next), this::loadMore);
-        }
-    }
-
-    /** One browse card: thumb column + name/metadata/blurb, tap = details. */
-    private View buildModCard(ModDbClient.ModSummary mod) {
-        Activity activity = host.activity();
-        LinearLayout row = new LinearLayout(activity);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setClickable(true);
-        row.setFocusable(true);
-        row.setOnClickListener(v -> openModDetails(mod));
-        int pad = UiKit.dp(activity, 10f);
-        row.setPadding(pad, pad, pad, pad);
-
-        final ImageView thumb = new ImageView(activity);
-        thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        thumb.setContentDescription(activity.getString(R.string.mods_thumb_desc));
-        int size = UiKit.dp(activity, 64f);
-        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(size, size);
-        tlp.setMarginEnd(UiKit.dp(activity, 12f));
-        row.addView(thumb, tlp);
-        if (mod.imageUrl == null || mod.imageUrl.isEmpty()) {
-            thumb.setImageResource(R.drawable.ic_gen_chip);
-            thumb.setImageTintList(android.content.res.ColorStateList.valueOf(
-                UiKit.color(activity, R.color.gen_primary)));
-        } else {
-            ThumbCache.load(mod.imageUrl, bitmap -> activity.runOnUiThread(() -> {
-                if (bitmap != null && !isFinishingSafe()) {
-                    thumb.setImageBitmap(bitmap);
-                    thumb.setImageTintList(null);
-                }
-            }));
-        }
-
-        LinearLayout textCol = new LinearLayout(activity);
-        textCol.setOrientation(LinearLayout.VERTICAL);
-        row.addView(textCol, new LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        TextView title = new TextView(activity);
-        title.setText(mod.name);
-        title.setTextSize(15f);
-        title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        title.setTextColor(UiKit.color(activity, R.color.gen_on_surface));
-        textCol.addView(title);
-
-        StringBuilder meta = new StringBuilder();
-        if (mod.rating != null && !mod.rating.isEmpty()) {
-            meta.append("\u2605 ").append(mod.rating);
-        }
-        if (mod.downloads != null && !mod.downloads.isEmpty()) {
-            if (meta.length() > 0) {
-                meta.append(" \u00b7 ");
-            }
-            meta.append(mod.downloads);
-        }
-        if (meta.length() > 0) {
-            TextView metaView = new TextView(activity);
-            metaView.setText(meta.toString());
-            metaView.setTextSize(12f);
-            metaView.setTextColor(UiKit.color(activity, R.color.gen_primary));
-            textCol.addView(metaView);
-        }
-
-        String blurb = (mod.description != null && !mod.description.isEmpty())
-            ? mod.description : activity.getString(R.string.mods_no_description);
-        TextView blurbView = new TextView(activity);
-        blurbView.setText(blurb);
-        blurbView.setTextSize(13f);
-        blurbView.setMaxLines(2);
-        blurbView.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        blurbView.setTextColor(UiKit.color(activity, R.color.gen_on_surface_variant));
-        textCol.addView(blurbView);
-
-        return row;
-    }
-
-    // ------------------------------------------------------- detail screen
-
-    private void openModDetails(ModDbClient.ModSummary mod) {
-        detailMod = mod;
-        detailData = null;
-        detailFiles = null;
-        screen = SCREEN_DETAIL;
-        rebuild();
-    }
-
-    private void buildDetail() {
-        Activity activity = host.activity();
-        LinearLayout card = UiKit.card(listHost);
-        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_chevron,
-            activity.getString(R.string.mods_back_to_browse), () -> {
-                screen = SCREEN_BROWSE;
-                rebuild();
-            });
-
-        if (detailData == null) {
-            UiKit.sectionHeader(card, R.drawable.ic_gen_chip, detailMod.name, false);
-            UiKit.supporting(card, activity.getString(R.string.mods_loading));
-            final ModDbClient.ModSummary summary = detailMod;
-            new Thread(() -> {
-                ModDbClient.ModDetails fetched = null;
-                try {
-                    fetched = ModDbClient.fetchModDetails(summary);
-                } catch (Exception ignored) {
-                    // Details are enrichment; a failure leaves a functional
-                    // header + file list, not a dead end.
-                }
-                final ModDbClient.ModDetails finalDetails = fetched;
-                activity.runOnUiThread(() -> {
-                    if (!isFinishingSafe()) {
-                        detailData = finalDetails != null ? finalDetails
-                            : new ModDbClient.ModDetails(
-                                summary.profilePath, summary.name, "", summary.imageUrl);
-                        rebuild();
-                    }
-                });
-            }, "gx-moddb-detail").start();
-            return;
-        }
-
-        // Rating + downloads as chips (GenLauncher shows these on the mod page).
-        LinearLayout chips = new LinearLayout(activity);
-        chips.setOrientation(LinearLayout.HORIZONTAL);
-        int chipPad = UiKit.dp(activity, 4f);
-        chips.setPadding(chipPad, 0, chipPad, 0);
-        if (detailData.rating != null && !detailData.rating.isEmpty()) {
-            UiKit.chip(chips, R.drawable.ic_gen_check, "\u2605 " + detailData.rating,
-                R.color.gen_primary, R.color.gen_surface_container_high);
-        }
-        if (detailData.downloads != null && !detailData.downloads.isEmpty()) {
-            UiKit.chip(chips, R.drawable.ic_gen_download, detailData.downloads,
-                R.color.gen_on_surface_variant, R.color.gen_surface_container_high);
-        }
-        // GeneralsX @feature 17/09/2026 GenLauncher-style stats chips:
-        // vote count behind the score, site rank, and watchers. Each is
-        // optional — a reshaped page just renders fewer chips.
-        if (detailData.ratingVotes != null && !detailData.ratingVotes.isEmpty()) {
-            UiKit.chip(chips, R.drawable.ic_gen_check,
-                activity.getString(R.string.mods_votes_format, detailData.ratingVotes),
-                R.color.gen_on_surface_variant, R.color.gen_surface_container_high);
-        }
-        if (detailData.rank != null && !detailData.rank.isEmpty()) {
-            UiKit.chip(chips, R.drawable.ic_gen_chip,
-                activity.getString(R.string.mods_rank_format, detailData.rank),
-                R.color.gen_on_surface_variant, R.color.gen_surface_container_high);
-        }
-        if (detailData.watchers != null && !detailData.watchers.isEmpty()) {
-            UiKit.chip(chips, R.drawable.ic_gen_chip,
-                activity.getString(R.string.mods_watchers_format, detailData.watchers),
-                R.color.gen_on_surface_variant, R.color.gen_surface_container_high);
-        }
-        if (chips.getChildCount() > 0) {
-            listHost.addView(chips, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        }
-
-        if (detailData.imageUrl != null && !detailData.imageUrl.isEmpty()) {
-            LinearLayout hero = UiKit.card(listHost);
-            final ImageView image = new ImageView(activity);
-            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            image.setContentDescription(activity.getString(R.string.mods_thumb_desc));
-            hero.addView(image, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, UiKit.dp(activity, 170f)));
-            ThumbCache.load(detailData.imageUrl, bitmap -> activity.runOnUiThread(() -> {
-                if (bitmap != null && !isFinishingSafe()) {
-                    image.setImageBitmap(bitmap);
-                }
-            }));
-        }
-
-        // Screenshots strip: horizontally scrolling gallery, GenLauncher-style.
-        if (!detailData.screenshots.isEmpty()) {
-            LinearLayout shotsCard = UiKit.card(listHost);
-            UiKit.sectionHeader(shotsCard, R.drawable.ic_gen_display,
-                activity.getString(R.string.mods_screenshots), false);
-            HorizontalScrollView scroller = new HorizontalScrollView(activity);
-            scroller.setHorizontalScrollBarEnabled(false);
-            LinearLayout strip = new LinearLayout(activity);
-            strip.setOrientation(LinearLayout.HORIZONTAL);
-            scroller.addView(strip, new HorizontalScrollView.LayoutParams(
-                HorizontalScrollView.LayoutParams.WRAP_CONTENT,
-                HorizontalScrollView.LayoutParams.WRAP_CONTENT));
-            for (String shotUrl : detailData.screenshots) {
-                final ImageView shot = new ImageView(activity);
-                shot.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                shot.setContentDescription(activity.getString(R.string.mods_screenshot_desc));
-                int h = UiKit.dp(activity, 120f);
-                LinearLayout.LayoutParams slp =
-                    new LinearLayout.LayoutParams(h * 16 / 9, h);
-                slp.setMarginEnd(UiKit.dp(activity, 8f));
-                strip.addView(shot, slp);
-                ThumbCache.load(shotUrl, bitmap -> activity.runOnUiThread(() -> {
-                    if (bitmap != null && !isFinishingSafe()) {
-                        shot.setImageBitmap(bitmap);
-                    }
-                }));
-            }
-            shotsCard.addView(scroller, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        }
-
-        LinearLayout body = UiKit.card(listHost);
-        UiKit.sectionHeader(body, R.drawable.ic_gen_chip, detailData.name, false);
-        String desc = (detailData.description != null && !detailData.description.isEmpty())
-            ? detailData.description : activity.getString(R.string.mods_no_description);
-        UiKit.supporting(body, desc);
-        UiKit.button(body, UiKit.BTN_PRIMARY, R.drawable.ic_gen_download,
-            activity.getString(R.string.mods_open_details), this::openModFiles);
-    }
-
-    // --------------------------------------------------------- files screen
-
-    private void openModFiles() {
-        screen = SCREEN_FILES;
-        rebuild();
-    }
-
-    /** Opens the release list straight from an update badge on a group. */
-    private void openFilesForUpdate(String modName, String profilePath) {
-        detailMod = new ModDbClient.ModSummary(modName, profilePath, "", null, null, null);
-        detailData = null;
-        detailFiles = null;
-        screen = SCREEN_FILES;
-        rebuild();
-    }
-
-    private void buildFiles() {
-        Activity activity = host.activity();
-        if (detailFiles == null) {
-            LinearLayout card = UiKit.card(listHost);
-            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_chevron,
-                activity.getString(R.string.mods_back_to_browse), () -> {
-                    screen = SCREEN_DETAIL;
-                    rebuild();
-                });
-            UiKit.sectionHeader(card, R.drawable.ic_gen_chip, detailMod.name, false);
-            UiKit.supporting(card, activity.getString(R.string.mods_loading));
-            final ModDbClient.ModSummary summary = detailMod;
-            new Thread(() -> {
-                List<ModDbClient.ModFile> fetched = null;
-                String error = null;
-                try {
-                    fetched = ModDbClient.fetchModFiles(summary.profilePath);
-                } catch (Exception e) {
-                    error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
-                }
-                final List<ModDbClient.ModFile> finalFiles = fetched;
-                final String finalError = error;
-                activity.runOnUiThread(() -> {
-                    if (!isFinishingSafe()) {
-                        if (finalError != null) {
-                            screen = SCREEN_BROWSE;
-                            renderError(activity.getString(R.string.mods_err_fetch, finalError), true);
-                        } else {
-                            detailFiles = finalFiles != null ? finalFiles : new ArrayList<>();
-                            rebuild();
-                        }
-                    }
-                });
-            }, "gx-moddb-files").start();
-            return;
-        }
-
-        listHost.removeAllViews();
-        LinearLayout card = UiKit.card(listHost);
-        UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_chevron,
-            activity.getString(R.string.mods_back_to_browse), () -> {
-                screen = SCREEN_DETAIL;
-                rebuild();
-            });
-        UiKit.sectionHeader(card, R.drawable.ic_gen_download, detailMod.name, false);
-        UiKit.supporting(card, activity.getString(R.string.mods_files_count, detailFiles.size()));
-        UiKit.supporting(card, activity.getString(R.string.mods_files_hint));
-
-        if (detailFiles.isEmpty()) {
-            UiKit.supporting(card, activity.getString(R.string.mods_no_files));
-            return;
-        }
-        for (ModDbClient.ModFile file : detailFiles) {
-            StringBuilder supporting = new StringBuilder();
-            if (file.category != null && !file.category.isEmpty()) {
-                supporting.append(file.category);
-            }
-            if (file.date != null && !file.date.isEmpty()) {
-                if (supporting.length() > 0) {
-                    supporting.append(" \u00b7 ");
-                }
-                supporting.append(file.date);
-            }
-            if (file.sizeBytes != null && !file.sizeBytes.isEmpty()) {
-                if (supporting.length() > 0) {
-                    supporting.append(" \u00b7 ");
-                }
-                supporting.append(file.sizeBytes);
-            }
-            // GeneralsX @feature 17/09/2026 GenLauncher-style per-version
-            // download counts ("17.4K downloads") from the /downloads page.
-            if (file.downloadCount != null && !file.downloadCount.isEmpty()) {
-                if (supporting.length() > 0) {
-                    supporting.append(" \u00b7 ");
-                }
-                supporting.append(file.downloadCount)
-                          .append(' ')
-                          .append(activity.getString(R.string.mods_downloads_short));
-            }
-            UiKit.listRow(card, R.drawable.ic_gen_download, file.name,
-                supporting.length() > 0 ? supporting.toString()
-                                        : activity.getString(R.string.mods_no_description),
-                () -> confirmDownload(detailMod, file));
-        }
-    }
-
-    private void confirmDownload(ModDbClient.ModSummary mod, ModDbClient.ModFile file) {
-        Activity activity = host.activity();
-        new android.app.AlertDialog.Builder(activity)
-                .setTitle(activity.getString(R.string.mods_download_title, file.name))
-                .setMessage(activity.getString(R.string.mods_download_body,
-                    mod.name, activity.getString(R.string.mods_download_note)))
-                .setPositiveButton(R.string.mods_download_confirm, (d, w) -> {
-                    startInstall(mod, file);
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
-    // ------------------------------------------------------ install pipeline
-
-    /**
-     * Swaps the page for a progress card and runs the download+extract on a
-     * worker thread. On failure the card offers Retry (resuming from the
-     * .part.dl partial) or Back — a dropped connection no longer throws away
-     * a 90%-complete 2 GB download. The release installs as a NEW version
-     * leaf beside any existing ones (GenLauncher's model), and its origin is
-     * recorded in the sidecar for later update checks.
-     */
-    private void startInstall(ModDbClient.ModSummary mod, ModDbClient.ModFile file) {
-        Activity activity = host.activity();
-        if (gameFolder == null) {
-            toast(activity.getString(R.string.mods_no_game_folder));
-            return;
-        }
-        installMod = mod;
-        installFile = file;
-        installBase = fileBaseName(file.name);
-        // Cheap guard before a multi-GB download: refuse to start when the
-        // drive is nearly full, so the failure happens before the wait, not
-        // after 90% of it.
-        if (ModInstaller.freeBytes(gameFolder) < 512L * 1024 * 1024) {
-            new android.app.AlertDialog.Builder(activity)
-                    .setTitle(activity.getString(R.string.mods_err_title))
-                    .setMessage(activity.getString(R.string.mods_err_low_storage,
-                        humanBytes(ModInstaller.freeBytes(gameFolder))))
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show();
-            return;
-        }
-        showInstallCard(installBase);
-        runInstallThread();
-    }
+    // ------------------------------------------------------ install progress
 
     private void clearPageReferences() {
         installPhaseView = null;
         installBar = null;
         installBytesView = null;
+        resultsHost = null;
     }
 
     private void showInstallCard(String base) {
@@ -1696,58 +1951,38 @@ final class ModsPanel extends LinearLayout {
         };
     }
 
-    private void runInstallThread() {
+    private void showStatus(String text) {
+        if (statusBar != null) {
+            statusBar.setVisibility(View.VISIBLE);
+            statusBar.setText(text);
+        }
+    }
+
+    private void hideStatus() {
+        if (statusBar != null) {
+            statusBar.setVisibility(View.GONE);
+        }
+    }
+
+    private void renderError(String message, boolean offerRetry) {
         Activity activity = host.activity();
-        final ModInstaller.Listener listener = makeInstallListener();
-        final String base = installBase;
-        new Thread(() -> {
-            String error = null;
-            try {
-                String url = ModDbClient.resolveDownloadUrl(installFile.pagePath);
-                File installed = ModInstaller.downloadAndInstall(url, gameFolder,
-                    installMod.name, base, installFile.pagePath, listener);
-                // GenLauncher style: a single-version ModDB download collapses
-                // its redundant <Mod>/<Mod>/ leaf exactly like local installs.
-                if (installed != null) {
-                    ModInstaller.flattenSingleVersion(installed.getParentFile());
-                }
-            } catch (Exception e) {
-                error = (e.getMessage() != null) ? e.getMessage() : String.valueOf(e);
-            }
-            final String finalError = error;
-            activity.runOnUiThread(() -> {
-                if (statusBar != null) {
-                    statusBar.setVisibility(View.GONE);
-                }
-                if (!isFinishingSafe()) {
-                    if (finalError != null) {
-                        offerInstallRetry(finalError);
-                        return;
-                    }
-                    toast(activity.getString(R.string.mods_install_done, base));
-                    screen = SCREEN_INSTALLED;
-                    saveBrowsePrefs();
+        LinearLayout host = resultsHost != null ? resultsHost : listHost;
+        host.removeAllViews();
+        LinearLayout card = UiKit.card(host);
+        UiKit.sectionHeader(card, R.drawable.ic_gen_info,
+            activity.getString(R.string.mods_err_title), false);
+        UiKit.supporting(card, message);
+        if (offerRetry) {
+            UiKit.button(card, UiKit.BTN_TONAL, R.drawable.ic_gen_refresh,
+                activity.getString(R.string.mods_retry), () -> {
+                    repoMods = null;
+                    repoError = null;
                     rebuild();
-                }
-            });
-        }, "gx-mod-install").start();
+                });
+        }
     }
 
-    /** Failed install: Retry resumes the partial; nothing restarts from zero. */
-    private void offerInstallRetry(String error) {
-        Activity activity = host.activity();
-        new android.app.AlertDialog.Builder(activity)
-                .setTitle(activity.getString(R.string.mods_err_title))
-                .setMessage(activity.getString(R.string.mods_err_install, error))
-                .setPositiveButton(R.string.mods_retry, (d, w) -> {
-                    showInstallCard(installBase);
-                    runInstallThread();
-                })
-                .setNegativeButton(android.R.string.cancel, (d, w) -> rebuild())
-                .show();
-    }
-
-    /** File base name for a ModDB title, used as folder name + tmp name. */
+    /** File base name for a version title, used as folder name + tmp name. */
     private static String fileBaseName(String title) {
         String cleaned = title.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
         return cleaned.isEmpty() ? "mod" : cleaned;
@@ -1766,15 +2001,18 @@ final class ModsPanel extends LinearLayout {
     }
 
     private void onRefresh() {
-        if (screen == SCREEN_BROWSE) {
-            results = new ArrayList<>();
-            runBrowse(lastQuery);
-        } else if (screen == SCREEN_INSTALLED) {
-            updateByGroup.clear(); // a refresh re-checks updates
-            rebuild();
-        } else {
-            rebuild();
+        if (screen == SCREEN_INSTALLED) {
+            updateByMod.clear(); // a refresh re-checks updates
+            layerUpdateByKey.clear();
+            modsWithUpdates.clear();
+            installedVersionByMod.clear();
+            availableVersionByMod.clear();
+        } else if (screen == SCREEN_REPO) {
+            repoMods = null;
+            repoError = null;
+            manifestCache.clear();
         }
+        rebuild();
     }
 
     private void toast(String text) {
@@ -1789,29 +2027,17 @@ final class ModsPanel extends LinearLayout {
     // ------------------------------------------------------------ navigation
 
     /**
-     * Host back handling: returns true when Back was consumed by panel
-     * navigation (files -> detail -> browse -> installed home); false means
-     * the host should do its own Back (finish / switch tab).
+     * Host back handling: detail returns to where it was opened from;
+     * anything else means the host should do its own Back.
      */
     boolean onBackPressed() {
-        if (screen == SCREEN_FILES) {
-            screen = SCREEN_DETAIL;
-            rebuild();
-            return true;
-        }
         if (screen == SCREEN_DETAIL) {
-            screen = SCREEN_BROWSE;
+            screen = detailReturn;
             rebuild();
             return true;
         }
-        if (screen == SCREEN_BROWSE && !results.isEmpty()) {
-            // Back from results means "leave the list", not "reload it":
-            // drop the results without forgetting the search term.
-            results = new ArrayList<>();
-            hasMorePages = false;
-            browsePage = 1;
-            screen = SCREEN_INSTALLED;
-            saveBrowsePrefs();
+        if (screen == SCREEN_REPO && !repoQuery.isEmpty()) {
+            repoQuery = "";
             rebuild();
             return true;
         }

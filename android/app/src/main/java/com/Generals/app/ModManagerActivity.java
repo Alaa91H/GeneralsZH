@@ -19,11 +19,15 @@
 // GeneralsX @feature Android port mod-launcher 14/09/2026
 //
 // The standalone, full-screen entry to the mod manager: a thin host around
-// ModsPanel (the reusable page also embedded as Setup's Mods bottom-nav
-// tab). All mod logic lives in the panel; this activity supplies only the
-// operations a panel cannot do itself — start the game, hand over to Setup's
-// folder picker when no game folder is configured, and forward SAF results
-// from the storage-import file picker.
+// ModsPanel (the reusable page also embedded in Setup's Home tab). All mod
+// logic lives in the panel; this activity supplies only the operations a
+// panel cannot do itself — start the game, hand over to Setup's folder
+// picker when no game folder is configured, and forward SAF results from
+// the storage-import file picker.
+//
+// GeneralsX @refactor 18/09/2026 ModDB backend removed: the repository needs
+// no host activity (plain HTTPS, no challenge WebView), so the host wiring
+// is gone and this file is just panel + navigation.
 
 package com.Generals.app;
 
@@ -44,11 +48,6 @@ public class ModManagerActivity extends Activity implements ModsPanel.Host {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setTitle(R.string.mods_window_title);
-        // GeneralsX @bugfix mod-launcher 15/09/2026 ModDB behind Cloudflare:
-        // when the direct HTTP path draws a 403 challenge, ModDbClient retries
-        // through a headless WebView that needs an activity context. This
-        // screen is where every ModDB fetch originates, so it hosts the engine.
-        ModDbClient.setHostActivity(this);
         panel = new ModsPanel(this, this, true);
         setContentView(panel);
     }
@@ -56,19 +55,10 @@ public class ModManagerActivity extends Activity implements ModsPanel.Host {
     @Override
     protected void onResume() {
         super.onResume();
-        ModDbClient.setHostActivity(this);
         // The game folder may have been changed while Setup was foreground;
         // the panel re-reads it so the Installed list can't show a deleted
         // mod as playable.
         panel.notifyGameFolderMaybeChanged();
-    }
-
-    @Override
-    protected void onDestroy() {
-        if (ModDbClient.hostActivity() == this) {
-            ModDbClient.setHostActivity(null);
-        }
-        super.onDestroy();
     }
 
     @Override
