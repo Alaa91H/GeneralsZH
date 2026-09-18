@@ -337,6 +337,31 @@ if [[ ! -f "${APK}" ]]; then
 fi
 echo "==> APK: ${APK}"
 
+# GeneralsX @bugfix 18/09/2026 Re-sign the shippable artifact with the
+# release key when signing material is present. assembleDebug above always
+# signs with the in-repo debug key (build.gradle pins it explicitly), so
+# without this step the workflow's "Verify release signature" gate — and,
+# worse, Android itself on update — rejects the APK: a debug identity can
+# never install over the release-signed app. apksigner replaces the debug
+# signatures in place; alignment is untouched. No key, no re-sign (fresh
+# clones and fork PRs keep plain debug builds).
+if [[ -n "${SIGNING_STORE_FILE:-}" && -n "${SIGNING_STORE_PASSWORD:-}" ]]; then
+    # Same precedence build.gradle documents: env key password wins,
+    # otherwise the store password doubles as the key password.
+    : "${SIGNING_KEY_ALIAS:=generals}"
+    : "${SIGNING_KEY_PASSWORD:=${SIGNING_STORE_PASSWORD}}"
+    BT="$(ls -d "${ANDROID_HOME}"/build-tools/*/ | sort | tail -1)"
+    echo "==> re-signing with release key (${SIGNING_STORE_FILE})"
+    "${BT}apksigner" sign \
+        --ks "${PROJECT_ROOT}/${SIGNING_STORE_FILE}" \
+        --ks-pass env:SIGNING_STORE_PASSWORD \
+        --ks-key-alias "${SIGNING_KEY_ALIAS}" \
+        --key-pass env:SIGNING_KEY_PASSWORD \
+        "${APK}"
+    echo "==> re-signed; verifying:"
+    "${BT}apksigner" verify --print-certs "${APK}" | grep -E "Signer #1|DN:" || true
+fi
+
 if [[ $DO_INSTALL -eq 1 ]]; then
     command -v adb >/dev/null 2>&1 || { echo "ERROR: adb not found on PATH"; exit 1; }
     echo "==> adb install -r"

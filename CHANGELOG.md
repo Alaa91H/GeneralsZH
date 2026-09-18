@@ -93,6 +93,13 @@ and the project versions per [Semantic Versioning](https://semver.org/):
   diagnostics, help, updates only).
 
 ### Fixed
+- **Tag builds failed the release-signature gate** — `package-android-zh.sh`
+  ships `assembleDebug`, which build.gradle pins to the in-repo debug key,
+  so the "Verify release signature" step (and Android itself on update)
+  could never see the release identity. The script now re-signs the APK
+  with the release key via `apksigner` whenever signing material is
+  present (validated locally: debug DN replaced by the release DN, gate
+  grep passes); keyless builds stay debug-signed.
 - **Repository layer counts absorbed sibling lists** — the manifest
   list parser stopped a `ModPatches:` list at the next non-indented key,
   swallowing the `ModAddons:` URLs below it (Shockwave showed 13 layers
