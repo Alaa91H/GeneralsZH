@@ -5,7 +5,7 @@ documented here. The format follows [Keep a Changelog](https://keepachangelog.co
 and the project versions per [Semantic Versioning](https://semver.org/):
 `versionCode = major*10000 + minor*100 + patch` (see `android/app/build.gradle`).
 
-## [Unreleased]
+## [1.6.0] - 2026-09-18
 
 ### Added
 
@@ -19,6 +19,36 @@ and the project versions per [Semantic Versioning](https://semver.org/):
   on-device by downloading and running Contra 10.0.2 Beta 2 Patch 1
   (2.1 GB in ~2 min at 17 MB/s). The archive path (`SimpleDownloadLink`)
   remains the fallback for mods without S3 storage.
+
+- **Full ModPatches / ModAddons layer support (GenLauncher parity)** —
+  every repository mod's patch and addon manifests resolve on its detail
+  page with per-layer Install / Update / Enable / Delete. Layers live
+  pristine under `Mods/<Mod>/+layers/`, and activation merges the enabled
+  set over the base into `Mods/<Mod>/+active/` (fingerprinted, rebuilt
+  only when stale; the engine still mounts a single `-mod` dir, so no
+  gameplay/determinism impact). Toggling a layer re-resolves a live
+  launch in place. Verified on-device: repository lists 26 mods with
+  correct per-mod layer counts (Contra 14, Shockwave 7).
+
+- **Manifest-driven update checks** — installed components record their
+  manifest URL + version (`.genlauncher_meta`); a newer release is simply
+  a manifest whose `Version` differs. The quiet check feeds the in-app
+  notice (tappable rows open the mod's page), per-card update badges, and
+  per-layer update flags — no re-download to know what moved.
+
+- **Per-card Play / Update / Versions / Delete** — every installed mod
+  carries its own update entry (opens the page when flagged, otherwise
+  runs a single-mod check and reports up to date) and whole-family
+  delete (versions, layers, merged tree, sidecars, logo) in one confirmed
+  step. Two rows of two, so Arabic labels never ellipsize (verified
+  on-device).
+
+- **Per-GPU backend recommendation** — the detected renderer chip is now
+  joined by an advisory recommendation (Adreno → Vulkan, everything else
+  → native GLES) with a one-tap Apply; nothing ever auto-switches a
+  working setup. Picking Vulkan on a device with no Vulkan feature warns
+  before saving. Verified on-device (Adreno 509 → Vulkan recommended
+  and applied, Turnip/driver sections appeared).
 
 - **Second home-screen icon restored** — the game-settings icon
   (`SetupShortcutActivity`, a plain trampoline that never touches SDL)
@@ -63,6 +93,15 @@ and the project versions per [Semantic Versioning](https://semver.org/):
   diagnostics, help, updates only).
 
 ### Fixed
+- **Repository layer counts absorbed sibling lists** — the manifest
+  list parser stopped a `ModPatches:` list at the next non-indented key,
+  swallowing the `ModAddons:` URLs below it (Shockwave showed 13 layers
+  instead of 7). Lists now end at the next sibling key; verified
+  on-device against the live index.
+- **Backend pick left the title on "Graphics"** — `onPickRenderBackend`
+  rebuilt `TAB_GRAPHICS`, a page identity that maps to Home content;
+  it now rebuilds `TAB_HOME`, so title and content agree (caught
+  on-device when the recommendation button was tapped).
 - **Infinite rebuild loop in the Mods panel** (critical) — mod families
   installed from storage (no ModDB origin) were skipped by the automatic
   update check without recording a verdict, leaving `updateByGroup` empty,
@@ -93,6 +132,21 @@ and the project versions per [Semantic Versioning](https://semver.org/):
   on networks with a user-installed filtering CA, Chrome browses ModDB
   while WebView died with `net_error -202`; both now behave the same.
   Cleartext remains forbidden.
+- **Bottom rail removed** — the tabs merged into one Home page, so the
+  single-destination bar was chrome without a choice. Home is the page;
+  the gear opens Settings. The slide transition died with the rail; the
+  Settings fade remains, and Back still returns Home.
+- **App-bar overline removed** — the brand line above the title was
+  redundant on every page; the title alone names the screen.
+
+### Removed
+
+- **ModDB backend** — the mod manager is GenLauncher-repository only:
+  `ModDbClient`, `ChallengeActivity`, `WebViewFetch`, the ModDB
+  browse/detail/files screens, `.moddb_meta` sidecars and ~40 ModDB
+  strings are gone. Pre-1.6 installs keep launching as update-unaware
+  imports; reinstalling a mod via the repository re-attaches update
+  tracking.
 
 ## [1.5.3] - 2026-09-17
 
